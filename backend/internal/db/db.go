@@ -1,0 +1,38 @@
+package db
+
+import (
+	"fmt"
+
+	"gorm.io/driver/mysql"
+	"gorm.io/gorm"
+)
+
+type Dbconfig struct {
+	Host     string `yaml:"host"`
+	User     string `yaml:"user"`
+	Port     string `yaml:"port"`
+	Password string `yaml:"password"`
+	DbName   string `yaml:"dbname"`
+}
+
+func NewDB(config Dbconfig) (*gorm.DB, error) {
+	//构造dsn  mysql 形式
+	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&Time=True&loc=Local", config.User, config.Password, config.Host, config.Port, config.DbName)
+
+	// 连接数据库
+	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return db, nil
+}
+
+func CloseDB(db *gorm.DB) error {
+	sqldb, err := db.DB() // 从gorm.DB中获取sql.DB  unwrap
+	if err != nil {
+		return err
+	}
+	return sqldb.Close()
+}
