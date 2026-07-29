@@ -36,3 +36,10 @@ func CloseDB(db *gorm.DB) error {
 	}
 	return sqldb.Close()
 }
+func AutoMigrate(db *gorm.DB) error {
+	return db.AutoMigrate(
+		&account.Account{}, &video.Video{}, &video.Like{}, &video.Comment{},
+		&social.Social{}, &video.OutboxMsg{}, &video.Tag{}, &video.VideoTag{},
+		&message.Message{}, &worker.Notification{},
+	)
+}

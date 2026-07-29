@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"time"
-	"uuid"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -42,18 +41,19 @@ func InitSecret() []byte {
 }
 
 type Claims struct {
-	AccountID string `json:"account_id"`
+	AccountID uint   `json:"account_id"`
 	UserName  string `json:"username"`
 	*jwt.RegisteredClaims
 }
 
 // 生成token  添加claims
-func GenerateToken() string {
+func GenerateToken(id uint, username string) string {
 
 	now := time.Now()
+	// token 可以存业务信息
 	claims := Claims{
-		AccountID: uuid.New().String(),
-		UserName:  "test",
+		AccountID: id,
+		UserName:  username,
 		RegisteredClaims: &jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(now.Add(time.Hour * 24)),
 			IssuedAt:  jwt.NewNumericDate(now),
