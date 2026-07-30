@@ -5,9 +5,10 @@ import (
 	"errors"
 	"feedvid/internal/auth"
 	"log"
-	"strings"
 	"strconv"
+	"strings"
 	"time"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -48,7 +49,7 @@ func (as *AccountService) CreateAccount(ctx context.Context, acc *Account) error
 	return nil
 }
 
-func (as *AccountService) RenameWithToken(ctx context.Context, id uint, newName string) (string, error) {
+func (as *AccountService) Rename(ctx context.Context, id uint, newName string) (string, error) {
 	//@todo  需要要求 新旧名字不一样吗
 	if newName == "" {
 		return " ", ErrNameIsEmpty
@@ -146,8 +147,6 @@ func (as *AccountService) FindAll(ctx context.Context) ([]*Account, error) {
 	return as.repo.FindAllAccounts(ctx)
 }
 
-
-
 func (as *AccountService) UpdateProfile(ctx context.Context, accountID uint, req *UpdateProfileRequest) error {
 	updates := map[string]interface{}{}
 	if req.Bio != "" {
@@ -209,4 +208,3 @@ func (as *AccountService) RefreshAccessToken(ctx context.Context, refreshToken s
 	}
 	return "", 0, "", errors.New("invalid refresh token")
 }
-
