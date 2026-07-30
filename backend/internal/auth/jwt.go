@@ -32,6 +32,7 @@ func InitSecret() []byte {
 			log.Printf("FATAL: cannot generate JWT secret: %v", err)
 			panic(err)
 		}
+		// 十六进制转化成字符串 不丢失信息  直接string 转换会变成ascll码解析 有的组合不能解析会丢失信息
 		secret = hex.EncodeToString(b)
 		log.Println("WARNING: JWT_SECRET is not set, generated a random one")
 
@@ -62,9 +63,9 @@ func GenerateToken(id uint, username string) string {
 		},
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-	tokenString, err := token.SignedString(InitSecret())
+	unsignedToken := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	// 秘钥加密 生成token  秘钥负责签名
+	tokenString, err := unsignedToken.SignedString(InitSecret())
 	if err != nil {
 		log.Printf("FATAL: cannot generate JWT token: %v", err)
 		panic(err)
@@ -72,11 +73,10 @@ func GenerateToken(id uint, username string) string {
 	return tokenString
 }
 
-func InitRefreshSecret() (string, error) {
-	b := make([]byte, 32)
-
+// 用于提示重新派发accessToken的token
+func GenerateRefreshToken() (string, error) {
+	var b = make([]byte, 32)
 	if _, err := rand.Read(b); err != nil {
-		log.Printf("FATAL: cannot generate refresh JWT secret: %v", err)
 		return "", err
 	}
 	return hex.EncodeToString(b), nil

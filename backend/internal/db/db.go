@@ -1,6 +1,7 @@
 package db
 
 import (
+	"feedvid/internal/account"
 	"fmt"
 
 	"gorm.io/driver/mysql"
@@ -21,7 +22,7 @@ func NewDB(config Dbconfig) (*gorm.DB, error) {
 
 	// 连接数据库
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
-
+	//todo 可 switch case 一下 不同的数据库
 	if err != nil {
 		return nil, err
 	}
