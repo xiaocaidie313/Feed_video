@@ -12,6 +12,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+// @todo add redis
 type AccountService struct {
 	repo *AccountRepo
 }
@@ -24,6 +25,10 @@ var (
 	ErrInvalidUsername   = errors.New("username is invalid")
 	ErrInvalidPassword   = errors.New("password is invalid")
 )
+
+func NewAccountService(repo *AccountRepo) *AccountService {
+	return &AccountService{repo: repo}
+}
 
 // 验证密码
 func VerifyPassword(ctx context.Context, hashedPassword string, password string) error {

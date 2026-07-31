@@ -14,6 +14,10 @@ type AccountRepo struct {
 	db *gorm.DB
 }
 
+func NewAccountRepo(db *gorm.DB) *AccountRepo {
+	return &AccountRepo{db: db}
+}
+
 // 单纯的把 account 写入数据库  是初始化好的accout
 func (ar *AccountRepo) CreateAccount(ctx context.Context, acc *Account) error {
 
@@ -85,25 +89,32 @@ func (ar *AccountRepo) Find20UsersByUsername(ctx context.Context, username strin
 }
 
 func (ar *AccountRepo) Login(ctx context.Context, id uint, accessToken string, refreshToken string) error {
-	ar.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.WithContext(ctx).Model(&Account{}).Where("id = ?", id).Update("access_token", accessToken).Error; err != nil {
-			return err
+	return ar.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&Account{}).Where("id = ?", id).Updates(map[string]interface{}{
+			"token":         accessToken,
+			"refresh_token": refreshToken,
+		})
+		if result.Error != nil {
+			return result.Error
 		}
-		if err := tx.WithContext(ctx).Model(&Account{}).Where("id = ?", id).Update("refresh_token", refreshToken).Error; err != nil {
-			return err
+		if result.RowsAffected == 0 {
+			return gorm.ErrRecordNotFound
 		}
 		return nil
 	})
-	return nil
 }
 
 // 登出清除
 func (ar *AccountRepo) Logout(ctx context.Context, id uint) error {
-	if err := ar.db.WithContext(ctx).Model(&Account{}).Where("id = ?", id).Update("access_token", "").Error; err != nil {
-		return err
+	result := ar.db.WithContext(ctx).Model(&Account{}).Where("id = ?", id).Updates(map[string]interface{}{
+		"token":         "",
+		"refresh_token": "",
+	})
+	if result.Error != nil {
+		return result.Error
 	}
-	if err := ar.db.WithContext(ctx).Model(&Account{}).Where("id = ?", id).Update("refresh_token", "").Error; err != nil {
-		return err
+	if result.RowsAffected == 0 {
+		return gorm.ErrRecordNotFound
 	}
 	return nil
 }
