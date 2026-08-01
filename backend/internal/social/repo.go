@@ -2,7 +2,7 @@ package social
 
 import (
 	"context"
-	"feedsystem_video_go/internal/account"
+	"feedvid/internal/account"
 
 	"gorm.io/gorm"
 )

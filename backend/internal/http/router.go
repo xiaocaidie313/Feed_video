@@ -3,6 +3,7 @@ package http
 import (
 	"feedvid/internal/account"
 	"feedvid/internal/midware/jwt"
+	"feedvid/internal/social"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -42,4 +43,19 @@ func SetRouter(db *gorm.DB) {
 		protectedAccountGroup.POST("/updateProfile", accountHandler.UpdateProfile)
 	}
 
+	// social group
+	socialRepository := social.NewSocialRepository(db)
+	socialService := social.NewSocialService(socialRepository)
+	socialHandler := social.NewSocialHandler(socialService)
+
+	socialGroup := r.Group("/api/social")
+	protectedSocialGroup := socialGroup.Group("")
+	protectedSocialGroup.Use(jwt.JWTAuth(accountService))
+	{
+		protectedSocialGroup.POST("/follow", socialHandler.Follow)
+		protectedSocialGroup.POST("/unfollow", socialHandler.UnFollow)
+		protectedSocialGroup.POST("/getallfollowers", socialHandler.GetAllFollowers)
+		protectedSocialGroup.POST("/getallvloggers", socialHandler.GetAllVloggers)
+		protectedSocialGroup.POST("/getcount", socialHandler.GetCount)
+	}
 }

@@ -1,6 +1,5 @@
 package social
 
-	
 import "feedvid/internal/account"
 
 type Social struct {
@@ -9,10 +8,12 @@ type Social struct {
 	VloggerID  uint `gorm:"not null;index:idx_social_vlogger;uniqueIndex:idx_social_follower_vlogger"`
 }
 
+// 关注
 type FollowRequest struct {
 	VloggerID uint `json:"vlogger_id"`
 }
 
+// 取消关注
 type UnfollowRequest struct {
 	VloggerID uint `json:"vlogger_id"`
 }
