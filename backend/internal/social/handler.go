@@ -148,7 +148,7 @@ func (sh *SocialHandler) GetAllVloggers(c *gin.Context) {
 func (h *SocialHandler) GetAllFollowers(c *gin.Context) {
 	var req GetAllFollowersRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(apierror.ClassifyHTTPStatus(err), gin.H{"error": err.Error()})
+		c.JSON(apierror.MathErrorsToStatus(err), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -164,7 +164,7 @@ func (h *SocialHandler) GetAllFollowers(c *gin.Context) {
 
 	followers, err := h.service.GetAllFollowers(c.Request.Context(), vloggerID)
 	if err != nil {
-		c.JSON(apierror.ClassifyHTTPStatus(err), gin.H{"error": err.Error()})
+		c.JSON(apierror.MathErrorsToStatus(err), gin.H{"error": err.Error()})
 		return
 	}
 	if followers == nil {
