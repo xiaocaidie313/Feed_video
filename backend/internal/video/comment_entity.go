@@ -13,14 +13,14 @@ type Comment struct {
 }
 
 type PublishCommentRequest struct {
-	Comment string
-	VedioID uint
+	VideoID uint   `json:"video_id"`
+	Content string `json:"content"`
 }
 
 type DeleteCommentRequest struct {
-	CommentID uint
+	CommentID uint `json:"comment_id"`
 }
 
 type GetAllCommentsRequest struct {
-	VideoID uint
+	VideoID uint `json:"video_id"`
 }
