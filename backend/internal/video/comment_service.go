@@ -14,14 +14,14 @@ import (
 )
 
 type CommentService struct {
-	repo            *CommentRepository
-	VideoRepository *VideoRepository
+	repo            *CommentRepo
+	VideoRepository *VideoRepo
 	cache           *rediscache.Client
 	commentMQ       *rabbitmq.CommentMQ
 	popularityMQ    *rabbitmq.PopularityMQ
 }
 
-func NewCommentService(repo *CommentRepository, videoRepo *VideoRepository, cache *rediscache.Client, commentMQ *rabbitmq.CommentMQ, popularityMQ *rabbitmq.PopularityMQ) *CommentService {
+func NewCommentService(repo *CommentRepo, videoRepo *VideoRepo, cache *rediscache.Client, commentMQ *rabbitmq.CommentMQ, popularityMQ *rabbitmq.PopularityMQ) *CommentService {
 	return &CommentService{repo: repo, VideoRepository: videoRepo, cache: cache, commentMQ: commentMQ, popularityMQ: popularityMQ}
 }
 
@@ -84,7 +84,7 @@ func (s *CommentService) Publish(ctx context.Context, comment *Comment) error {
 
 	// Fallback: direct Redis update when popularity MQ publish fails.
 	if !redisEnqueued {
-		UpdatePopularityCache(ctx, s.cache, comment.VideoID, 1)
+		s.cache.UpdatePopularityCache(ctx, comment.VideoID, 1)
 	}
 	s.notifyMentions(ctx, comment)
 	return nil

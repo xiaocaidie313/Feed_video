@@ -14,7 +14,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	rediscache "feedsystem_video_go/internal/middleware/redis"
+	rediscache "feedvid/internal/midware/redis"
 
 	"github.com/alicebob/miniredis/v2"
 	"github.com/gin-gonic/gin"

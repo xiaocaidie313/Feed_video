@@ -1,9 +1,9 @@
 package video
 
 import (
-	"feedsystem_video_go/internal/account"
-	"feedsystem_video_go/internal/apierror"
-	"feedsystem_video_go/internal/middleware/jwt"
+	"feedvid/internal/account"
+	"feedvid/internal/apierror"
+	"feedvid/internal/midware/jwt"
 
 	"github.com/gin-gonic/gin"
 )

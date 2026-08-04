@@ -13,7 +13,7 @@ import (
 
 	"feedvid/internal/account"
 	"feedvid/internal/apierror"
-	"feedvid/internal/middleware/jwt"
+	"feedvid/internal/midware/jwt"
 
 	"github.com/gin-gonic/gin"
 )
