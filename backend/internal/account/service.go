@@ -9,12 +9,15 @@ import (
 	"strings"
 	"time"
 
+	rediscache "feedvid/internal/midware/redis"
+
 	"golang.org/x/crypto/bcrypt"
 )
 
 // @todo add redis
 type AccountService struct {
-	repo *AccountRepo
+	repo  *AccountRepo
+	cache *rediscache.Client
 }
 
 var (
@@ -26,8 +29,8 @@ var (
 	ErrInvalidPassword   = errors.New("password is invalid")
 )
 
-func NewAccountService(repo *AccountRepo) *AccountService {
-	return &AccountService{repo: repo}
+func NewAccountService(repo *AccountRepo, cache *rediscache.Client) *AccountService {
+	return &AccountService{repo: repo, cache: cache}
 }
 
 // 验证密码
@@ -64,6 +67,16 @@ func (as *AccountService) Rename(ctx context.Context, id uint, newName string) (
 	if err := as.repo.RenameWithToken(ctx, token, id, newName); err != nil {
 		return "", ErrInvalidToken
 	}
+
+	// 看这几个服务有没有配置redis 如果配置了 就设置缓存 ?
+	if as.cache != nil {
+		cacheCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+		defer cancel()
+		// 传入key 和 value 和 过期时间
+		if err := as.cache.SetBytes(cacheCtx, as.cache.Key("account:%d", id), []byte(token), 24*time.Hour); err != nil {
+			log.Printf("failed to set cache: %v", err)
+		}
+	}
 	return token, nil
 }
 
@@ -89,22 +102,53 @@ func (as *AccountService) Login(ctx context.Context, username string, password s
 	if err := as.repo.Login(ctx, acc.ID, accessToken, refreshToken); err != nil {
 		return "", "", err
 	}
+
+	if as.cache != nil {
+		cacheCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+		defer cancel()
+		if as.cache.SetBytes(cacheCtx, as.cache.Key("account:%d", acc.ID), []byte(accessToken), 24*time.Hour); err != nil {
+			log.Printf("failed to set cache: %v", err)
+		}
+		if err := as.cache.SetBytes(cacheCtx, as.cache.Key("account:%d:refresh", acc.ID), []byte(refreshToken), 7*24*time.Hour); err != nil {
+			log.Printf("failed to set refresh cache: %v", err)
+		}
+		if err := as.cache.SetBytes(cacheCtx, as.cache.Key("refresh:%s", refreshToken), []byte(strconv.FormatUint(uint64(acc.ID), 10)), 7*24*time.Hour); err != nil {
+			log.Printf("failed to set refresh lookup: %v", err)
+		}
+	}
 	return accessToken, refreshToken, nil
 
 }
 func (as *AccountService) Logout(ctx context.Context, accountID uint) error {
-	// acc, err := as.repo.FindUserByAccountID(ctx, accountID)
-	// if err != nil {
-	// 	return err
-	// }
-	// if acc.Token == "" {
-	// 	return nil
-	// }
-	// if err := as.repo.Logout(ctx, acc.ID); err != nil {
-	// 	return err
-	// }
-	return as.repo.Logout(ctx, accountID)
+	acc, err := as.repo.FindUserByAccountID(ctx, accountID)
+	if err != nil {
+		return err
+	}
+	if acc.Token == "" {
+		return nil
+	}
+	if err := as.repo.Logout(ctx, acc.ID); err != nil {
+		return err
+	}
 
+	//登录登出都需要清除缓存
+	if as.cache != nil {
+		cacheCtx, cancel := context.WithTimeout(ctx, 50*time.Millisecond)
+		defer cancel()
+
+		if err := as.cache.Del(cacheCtx, as.cache.Key("account:%d", acc.ID)); err != nil {
+			log.Printf("failed to del cache: %v", err)
+		}
+		if err := as.cache.Del(cacheCtx, as.cache.Key("account:%d:refresh", acc.ID)); err != nil {
+			log.Printf("failed to del refresh cache: %v", err)
+		}
+		if acc.RefreshToken != "" {
+			if err := as.cache.Del(cacheCtx, as.cache.Key("refresh:%s", acc.RefreshToken)); err != nil {
+				log.Printf("failed to del refresh lookup: %v", err)
+			}
+		}
+	}
+	return nil
 }
 func (as *AccountService) ChangePassword(ctx context.Context, username string, newpassword string) error {
 	acc, _ := as.repo.FindOneUserByUserame(ctx, username)
