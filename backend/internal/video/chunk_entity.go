@@ -25,9 +25,10 @@ func (s *ChunkUploadSession) UploadedChunks() []int {
 
 func (s *ChunkUploadSession) IsComplete() bool {
 	for _, b := range s.UploadedBits {
-		if !b {
+		if !b{
 			return false
 		}
+		return true
 	}
 	return true
 }

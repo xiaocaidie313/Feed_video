@@ -4,15 +4,19 @@ import (
 	"context"
 	"errors"
 	"feedvid/internal/account"
+	"log"
+
+	rediscache "feedvid/internal/midware/redis"
 )
 
 type SocialService struct {
 	repo        *SocialRepository
 	accountRepo *account.AccountRepo
+	cache       *rediscache.Client
 }
 
-func NewSocialService(repo *SocialRepository) *SocialService {
-	return &SocialService{repo: repo}
+func NewSocialService(repo *SocialRepository, accountRepo *account.AccountRepo, cache *rediscache.Client) *SocialService {
+	return &SocialService{repo: repo, accountRepo: accountRepo, cache: cache}
 }
 
 func (ss *SocialService) Follow(ctx context.Context, social *Social) error {
@@ -24,7 +28,21 @@ func (ss *SocialService) Follow(ctx context.Context, social *Social) error {
 	if err != nil {
 		return errors.New("vlogger not found")
 	}
-	return ss.repo.Follow(ctx, social)
+
+	isFollowed, err := ss.repo.IsFollowed(ctx, social)
+	if err != nil {
+		return err
+	}
+	if isFollowed {
+		return errors.New("already followed")
+	}
+	// 先写 DB，确保数据持久化
+	if err := ss.repo.Follow(ctx, social); err != nil {
+		return err
+	}
+	// DB 成功后，失效该用户的关注列表缓存
+	ss.invalidateFollowingFeedCache(context.Background(), social.FollowerID)
+	return nil
 }
 func (ss *SocialService) UnFollow(ctx context.Context, social *Social) error {
 	_, err := ss.accountRepo.FindUserByAccountID(ctx, social.FollowerID)
@@ -35,7 +53,22 @@ func (ss *SocialService) UnFollow(ctx context.Context, social *Social) error {
 	if err != nil {
 		return errors.New("vlogger not found")
 	}
-	return ss.repo.Unfollow(ctx, social)
+
+	// 先写 DB
+	if err := ss.repo.Unfollow(ctx, social); err != nil {
+		return err
+	}
+
+	// 失效缓存
+	ss.invalidateFollowingFeedCache(context.Background(), social.FollowerID)
+
+	// 最后发 MQ
+	if ss.socialMQ != nil {
+		if err := s.socialMQ.UnFollow(ctx, social.FollowerID, social.VloggerID); err != nil {
+			log.Printf("social MQ UnFollow 发布失败: %v", err)
+		}
+	}
+	return nil
 }
 func (ss *SocialService) CountAllFollowers(ctx context.Context, vloggerID uint) (int64, error) {
 	_, err := ss.accountRepo.FindUserByAccountID(ctx, vloggerID)
@@ -75,4 +108,17 @@ func (ss *SocialService) IsFollowed(ctx context.Context, social *Social) (bool, 
 		return false, errors.New("vlogger not found")
 	}
 	return ss.repo.IsFollowed(ctx, social)
+}
+
+// accountID的following的feed缓存删除旧的缓存
+func (ss *SocialService) invalidateFollowingFeedCache(ctx context.Context, accountID uint) {
+	if ss.cache == nil {
+		return
+	}
+
+	pattern := ss.cache.Key("feed:listByFollowing:*:accountID=%d:*", accountID)
+
+	if err := ss.cache.DelByPattern(ctx, pattern); err != nil {
+		log.Println("failed to delete following feed cache:", err)
+	}
 }

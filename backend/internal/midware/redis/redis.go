@@ -69,15 +69,15 @@ func randToken(n int) (string, error) {
 	return hex.EncodeToString(b), nil
 }
 
-func (c *Client) Key(fomat string, args ...any) string {
+func (c *Client) Key(format string, args ...any) string {
 	prefix := ""
 	if c != nil {
 		prefix = c.keyPrefix
 	}
-	return prefix + fmt.Sprintf(fomat, args...)
+	return prefix + fmt.Sprintf(format, args...)
 }
 
-//抢锁方法 抢到锁返回token 和 true 否则返回false 和 err
+// 抢锁方法 抢到锁返回token 和 true 否则返回false 和 err
 func (c *Client) Lock(ctx context.Context, key string, ttl time.Duration) (token string, ok bool, err error) {
 	if c == nil || c.rdb == nil {
 		return "", false, nil
@@ -106,7 +106,6 @@ if count == 1 then
 end
 return count
 `)
-
 
 func (c *Client) Unlock(ctx context.Context, key string, token string) error {
 	if c == nil || c.rdb == nil {
