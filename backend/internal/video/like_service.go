@@ -5,15 +5,19 @@ import (
 	"errors"
 
 	"github.com/go-sql-driver/mysql"
+
+	rediscache "feedvid/internal/midware/redis"
 )
 
 type LikeService struct {
 	repo      *LikeRepository
 	VideoRepo *VideoRepo
+	cache     *rediscache.Client
 }
 
-func NewLikeService(repo *LikeRepository, videoRepo *VideoRepo) *LikeService {
-	return &LikeService{repo: repo, VideoRepo: videoRepo}
+// @TODO: like 部分增加redis   like点赞感觉也是高并发的部分
+func NewLikeService(repo *LikeRepository, videoRepo *VideoRepo, cache *rediscache.Client) *LikeService {
+	return &LikeService{repo: repo, VideoRepo: videoRepo, cache: cache}
 }
 
 // 判断是否是重复键错误
