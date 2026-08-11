@@ -51,7 +51,15 @@ func (s *LikeService) Like(ctx context.Context, like *Like) error {
 	if isLiked {
 		return errors.New("user has liked this video")
 	}
-	return s.repo.Like(ctx, like)
+
+	if err := s.repo.Like(ctx, like); err != nil {
+		return err
+	}
+	// Fallback: direct Redis update when popularity MQ publish fails.
+	if s.cache != nil {
+		UpdatePopularityCache(ctx, s.cache, like.VideoID, 1)
+	}
+	return nil
 }
 
 func (s *LikeService) Unlike(ctx context.Context, like *Like) error {
@@ -80,7 +88,14 @@ func (s *LikeService) Unlike(ctx context.Context, like *Like) error {
 		return errors.New("user has not liked this video")
 	}
 
-	return s.repo.Unlike(ctx, like)
+	if err := s.repo.Unlike(ctx, like); err != nil {
+		return err
+	}
+	// Fallback: direct Redis update when popularity MQ publish fails.
+	if s.cache != nil {
+		UpdatePopularityCache(ctx, s.cache, like.VideoID, -1)
+	}
+	return nil
 }
 
 func (s *LikeService) IsLiked(ctx context.Context, videoID, accountID uint) (bool, error) {

@@ -57,7 +57,10 @@ func (c *Client) Ping(ctx context.Context) error {
 	return c.rdb.Ping(ctx).Err()
 }
 
-func IsMiss(err error) bool {
+func (c *Client) IsMiss(err error) bool {
+	if c == nil || c.rdb == nil {
+		return false
+	}
 	return err == redis.Nil
 }
 
