@@ -12,6 +12,7 @@ type Config struct {
 	Server   ServerConfig   `yaml :"serve"`
 	Database DataBaseConfig `yaml :"database"`
 	Redis    RedisConfig    `yaml :"redis"`
+	RabbitMQ RabbitMQConfig `yaml :"rabbitmq"`
 }
 
 type ServerConfig struct {
@@ -29,6 +30,13 @@ type RedisConfig struct {
 	Port     int    `yaml :"port"`
 	Password string `yaml :"password"`
 	DB       int    `yaml :"db"`
+}
+
+type RabbitMQConfig struct {
+	Host     string `yaml :"host"`
+	Port     int    `yaml :"port"`
+	Username string `yaml :"username"`
+	Password string `yaml :"password"`
 }
 
 // 传入config.yaml
@@ -125,6 +133,12 @@ func LoadDefaultConfig() (*Config, error) {
 			Port:     6379,
 			Password: "",
 			DB:       0,
+		},
+		RabbitMQ: RabbitMQConfig{
+			Host:     "localhost",
+			Port:     5672,
+			Username: "guest",
+			Password: "guest",
 		},
 	}
 	ApplyEnvOverrides(cfg)
