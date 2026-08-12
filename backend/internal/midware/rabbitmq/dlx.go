@@ -37,6 +37,7 @@ func DeclareDLX(ch *amqp.Channel, queueName string) error {
 
 // GetRetryCount 从 AMQP x-death header 中提取当前消息已被重试的次数
 func GetRetryCount(d amqp.Delivery) int {
+	//d的头里存放着死信的详细信息  x-death 是一个数组 每个元素是一个表 表里存放着死信的详细信息
 	deaths, ok := d.Headers["x-death"].([]interface{})
 	if !ok || len(deaths) == 0 {
 		return 0
@@ -45,6 +46,7 @@ func GetRetryCount(d amqp.Delivery) int {
 	if !ok {
 		return 0
 	}
+	// 从表里取出 count 字段
 	count, ok := death["count"].(int64)
 	if !ok {
 		return 0
