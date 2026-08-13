@@ -2,14 +2,14 @@ package main
 
 import (
 	"context"
-	"feedsystem_video_go/internal/config"
-	"feedsystem_video_go/internal/db"
-	mqrabbit "feedsystem_video_go/internal/middleware/rabbitmq"
-	rediscache "feedsystem_video_go/internal/middleware/redis"
-	"feedsystem_video_go/internal/observability"
-	"feedsystem_video_go/internal/social"
-	"feedsystem_video_go/internal/video"
-	"feedsystem_video_go/internal/worker"
+	"feedvid/internal/config"
+	"feedvid/internal/db"
+	mqrabbit "feedvid/internal/midware/rabbitmq"
+	rediscache "feedvid/internal/midware/redis"
+	"feedvid/internal/observability"
+	"feedvid/internal/social"
+	"feedvid/internal/video"
+	"feedvid/internal/worker"
 	"log"
 	"os"
 	"os/signal"
@@ -56,6 +56,8 @@ func connectWithRetry(name string, maxRetries int, fn func() error) {
 }
 
 // runWorkerWithRetry 为每个 Worker 创建独立 Channel，断开后自动重连
+// 预先设置 依赖的位置
+
 func runWorkerWithRetry(ctx context.Context, name string, conn *amqp.Connection, fn func(*amqp.Channel) error) {
 	for {
 		select {
@@ -70,6 +72,8 @@ func runWorkerWithRetry(ctx context.Context, name string, conn *amqp.Connection,
 			time.Sleep(5 * time.Second)
 			continue
 		}
+		// 服务质量保证（QoS）
+		// 最多先推 50 条; 0表示不限制  false表示不全局设置 只对当前的channel有效
 		if err := ch.Qos(50, 0, false); err != nil {
 			log.Printf("%s: QoS 设置失败: %v", name, err)
 		}

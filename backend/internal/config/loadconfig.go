@@ -19,11 +19,11 @@ type ServerConfig struct {
 	Port int `yaml :"port"`
 }
 type DataBaseConfig struct {
-	Port     int    `yaml :"port"`
+	Port     string `yaml :"port"`
 	User     string `yaml :"user"`
 	Host     string `yaml :"host"`
 	Password string `yaml :"password"`
-	DBName   string `yaml :"db_name"`
+	DbName   string `yaml :"db_name"`
 }
 type RedisConfig struct {
 	Host     string `yaml :"host"`

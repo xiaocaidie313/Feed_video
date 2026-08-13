@@ -15,10 +15,10 @@ redis:
   db: 0
 
 # rabbitmq:
-#   host: localhost
-#   port: 5672
-#   username: admin
-#   password: password123
+  host: localhost
+  port: 5672
+  username: admin
+  password: password123
   
 # observability:
 #   pprof:
