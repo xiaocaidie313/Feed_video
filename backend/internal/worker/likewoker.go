@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"feedsystem_video_go/internal/middleware/rabbitmq"
-	"feedsystem_video_go/internal/video"
+	"feedvid/internal/midware/rabbitmq"
+	"feedvid/internal/video"
 	"log"
 	"time"
 
@@ -14,12 +14,12 @@ import (
 
 type LikeWorker struct {
 	ch     *amqp.Channel
-	likes  *video.LikeRepository
-	videos *video.VideoRepository
+	likes  *video.LikeRepo
+	videos *video.VideoRepo
 	queue  string
 }
 
-func NewLikeWorker(ch *amqp.Channel, likes *video.LikeRepository, videos *video.VideoRepository, queue string) *LikeWorker {
+func NewLikeWorker(ch *amqp.Channel, likes *video.LikeRepo, videos *video.VideoRepo, queue string) *LikeWorker {
 	return &LikeWorker{ch: ch, likes: likes, videos: videos, queue: queue}
 }
 
@@ -137,7 +137,7 @@ func (w *LikeWorker) applyUnlike(ctx context.Context, userID, videoID uint) erro
 	if !ok {
 		return nil
 	}
-
+	// 删除like 表记录
 	deleted, err := w.likes.DeleteByVideoAndAccount(ctx, videoID, userID)
 	if err != nil {
 		return err

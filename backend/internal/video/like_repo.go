@@ -8,29 +8,30 @@ import (
 	"gorm.io/gorm"
 )
 
-type LikeRepository struct {
+type LikeRepo struct {
 	db *gorm.DB
 }
 
-func NewLikeRepository(db *gorm.DB) *LikeRepository {
-	return &LikeRepository{db: db}
+func NewLikeRepo(db *gorm.DB) *LikeRepo {
+	return &LikeRepo{db: db}
 }
 
-func (r *LikeRepository) Like(ctx context.Context, like *Like) error {
+func (r *LikeRepo) Like(ctx context.Context, like *Like) error {
 	return r.db.WithContext(ctx).Create(like).Error
 }
 
-func (r *LikeRepository) Unlike(ctx context.Context, like *Like) error {
+func (r *LikeRepo) Unlike(ctx context.Context, like *Like) error {
 	return r.db.WithContext(ctx).
 		Where("video_id = ? AND account_id = ?", like.VideoID, like.AccountID).
 		Delete(&Like{}).Error
 }
 
-func (r *LikeRepository) LikeIgnoreDuplicate(ctx context.Context, like *Like) (created bool, err error) {
+// 忽略重复
+func (r *LikeRepo) LikeIgnoreDuplicate(ctx context.Context, like *Like) (created bool, err error) {
 	if like == nil || like.VideoID == 0 || like.AccountID == 0 {
 		return false, nil
 	}
-	// 创建新点的 like 记录 
+	// 创建新点的 like 记录
 	err = r.db.WithContext(ctx).Create(like).Error
 	if err == nil {
 		return true, nil
@@ -42,7 +43,7 @@ func (r *LikeRepository) LikeIgnoreDuplicate(ctx context.Context, like *Like) (c
 	return false, err
 }
 
-func (r *LikeRepository) DeleteByVideoAndAccount(ctx context.Context, videoID, accountID uint) (deleted bool, err error) {
+func (r *LikeRepo) DeleteByVideoAndAccount(ctx context.Context, videoID, accountID uint) (deleted bool, err error) {
 	if videoID == 0 || accountID == 0 {
 		return false, nil
 	}
@@ -52,7 +53,7 @@ func (r *LikeRepository) DeleteByVideoAndAccount(ctx context.Context, videoID, a
 	return res.RowsAffected > 0, res.Error
 }
 
-func (r *LikeRepository) IsLiked(ctx context.Context, videoID, accountID uint) (bool, error) {
+func (r *LikeRepo) IsLiked(ctx context.Context, videoID, accountID uint) (bool, error) {
 	var count int64
 	err := r.db.WithContext(ctx).Model(&Like{}).
 		Where("video_id = ? AND account_id = ?", videoID, accountID).
@@ -63,7 +64,7 @@ func (r *LikeRepository) IsLiked(ctx context.Context, videoID, accountID uint) (
 	return count > 0, nil
 }
 
-func (r *LikeRepository) BatchGetLiked(ctx context.Context, videoIDs []uint, accountID uint) (map[uint]bool, error) {
+func (r *LikeRepo) BatchGetLiked(ctx context.Context, videoIDs []uint, accountID uint) (map[uint]bool, error) {
 	likeMap := make(map[uint]bool)
 	if len(videoIDs) == 0 {
 		return likeMap, nil
@@ -84,7 +85,7 @@ func (r *LikeRepository) BatchGetLiked(ctx context.Context, videoIDs []uint, acc
 	return likeMap, nil
 }
 
-func (r *LikeRepository) ListLikedVideos(ctx context.Context, accountID uint) ([]Video, error) {
+func (r *LikeRepo) ListLikedVideos(ctx context.Context, accountID uint) ([]Video, error) {
 	var videos []Video
 	if accountID == 0 {
 		return videos, nil

@@ -13,7 +13,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-// comment 有发布 删除功能 设计video库和 comment库
+// comment 有发布 删除功能 涉及video库和 comment库
 type CommentWorker struct {
 	ch       *amqp.Channel
 	comments *video.CommentRepo

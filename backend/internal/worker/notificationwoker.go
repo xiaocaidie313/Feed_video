@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"feedsystem_video_go/internal/middleware/rabbitmq"
+	"feedvid/internal/midware/rabbitmq"
 	"log"
 	"time"
 
@@ -45,6 +45,7 @@ func (w *NotificationWorker) Run(ctx context.Context) error {
 	if w.queue == "" {
 		return errors.New("queue is required")
 	}
+	// 自动迁移notification表  自动建表
 	if err := w.db.WithContext(ctx).AutoMigrate(&Notification{}); err != nil {
 		return err
 	}
@@ -158,6 +159,7 @@ func (w *NotificationWorker) process(ctx context.Context, d amqp.Delivery) error
 		return err
 	}
 	if w.hub != nil {
+		// push接口
 		w.hub.Push(notif.RecipientID, notif)
 	}
 	return nil

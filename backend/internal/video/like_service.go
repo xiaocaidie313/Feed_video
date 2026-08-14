@@ -10,13 +10,13 @@ import (
 )
 
 type LikeService struct {
-	repo      *LikeRepository
+	repo      *LikeRepo
 	VideoRepo *VideoRepo
 	cache     *rediscache.Client
 }
 
 // @TODO: like 部分增加redis   like点赞感觉也是高并发的部分
-func NewLikeService(repo *LikeRepository, videoRepo *VideoRepo, cache *rediscache.Client) *LikeService {
+func NewLikeService(repo *LikeRepo, videoRepo *VideoRepo, cache *rediscache.Client) *LikeService {
 	return &LikeService{repo: repo, VideoRepo: videoRepo, cache: cache}
 }
 

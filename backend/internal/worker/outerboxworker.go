@@ -3,9 +3,9 @@ package worker
 import (
 	"context"
 	"encoding/json"
-	"feedsystem_video_go/internal/middleware/rabbitmq"
-	rediscache "feedsystem_video_go/internal/middleware/redis"
-	"feedsystem_video_go/internal/video"
+	"feedvid/internal/midware/rabbitmq"
+	rediscache "feedvid/internal/midware/redis"
+	"feedvid/internal/video"
 	"fmt"
 	"log"
 	"time"

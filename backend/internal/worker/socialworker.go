@@ -4,8 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"feedsystem_video_go/internal/middleware/rabbitmq"
-	"feedsystem_video_go/internal/social"
+	"feedvid/internal/midware/rabbitmq"
+	"feedvid/internal/social"
 	"log"
 	"time"
 
@@ -102,6 +102,7 @@ func (w *SocialWorker) process(ctx context.Context, body []byte) error {
 			return nil
 		}
 		var mysqlErr *mysql.MySQLError
+		// 1062 表示唯一键冲突  重复关注 不是错误  直接返回
 		if errors.As(err, &mysqlErr) && mysqlErr.Number == 1062 {
 			return nil
 		}

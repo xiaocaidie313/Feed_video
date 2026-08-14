@@ -171,7 +171,7 @@ func main() {
 	// 准备 repo
 	socialRepo := social.NewSocialRepository(sqlDB)
 	videoRepo := video.NewVideoRepository(sqlDB)
-	likeRepo := video.NewLikeRepository(sqlDB)
+	likeRepo := video.NewLikeRepo(sqlDB)
 	commentRepo := video.NewCommentRepository(sqlDB)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
