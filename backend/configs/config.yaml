@@ -14,14 +14,14 @@ redis:
   password: 123456
   db: 0
 
-# rabbitmq:
+rabbitmq:
   host: localhost
   port: 5672
   username: admin
   password: password123
   
-# observability:
-#   pprof:
-#     enabled: true
-#     api_addr: localhost:6060
-#     worker_addr: localhost:6061
+observability:
+  pprof:
+    enabled: true
+    api_addr: localhost:6060
+    worker_addr: localhost:6061

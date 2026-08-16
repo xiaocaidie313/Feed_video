@@ -100,6 +100,7 @@ func (w *NotificationWorker) process(ctx context.Context, d amqp.Delivery) error
 
 	var notif *Notification
 
+	//  通知用户的动作: 点赞 评论 关注
 	switch {
 	case routingKey == "like.like":
 		var evt rabbitmq.LikeEvent
@@ -158,6 +159,7 @@ func (w *NotificationWorker) process(ctx context.Context, d amqp.Delivery) error
 	if err := w.db.WithContext(ctx).Create(notif).Error; err != nil {
 		return err
 	}
+	// 发出去 信息通知
 	if w.hub != nil {
 		// push接口
 		w.hub.Push(notif.RecipientID, notif)

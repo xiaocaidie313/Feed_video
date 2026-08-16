@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"feedsystem_video_go/internal/auth"
+	"feedvid/internal/auth"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -54,6 +54,7 @@ func (h *SSEHub) Unsubscribe(userID uint, ch chan *Notification) {
 	chs := h.clients[userID]
 	for i, c := range chs {
 		if c == ch {
+			// 删除指定的ch
 			chs = append(chs[:i], chs[i+1:]...)
 			if len(chs) == 0 {
 				delete(h.clients, userID)
@@ -77,23 +78,21 @@ func sseAccountID(c *gin.Context) (uint, bool) {
 
 func (h *SSEHub) SSERequireAuth() gin.HandlerFunc {
 	return func(c *gin.Context) {
+		/// 获取原本token
 		token := c.Query("token")
-		if token == "" {
-			token = c.GetHeader("Authorization")
-			if len(token) > 7 && token[:7] == "Bearer " {
-				token = token[7:]
+		if token == " " {
+			tokenHeader := c.GetHeader("Authorization")
+			if len(tokenHeader) > 7 && tokenHeader[:7] == "Bearer" {
+				token = tokenHeader[7:]
 			}
 		}
-		if token == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing token"})
-			return
-		}
-		claims, err := auth.ParseToken(token)
+
+		cliams, err := auth.ParseToken(token)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
+			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
 			return
 		}
-		c.Set("accountID", claims.AccountID)
+		c.Set("accountID", cliams.AccountID)
 		c.Next()
 	}
 }
@@ -104,7 +103,7 @@ func (h *SSEHub) SSEHandler(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid account"})
 		return
 	}
-
+	// sse 服务端 主动发送 请求给 用户端
 	c.Writer.Header().Set("Content-Type", "text/event-stream")
 	c.Writer.Header().Set("Cache-Control", "no-cache")
 	c.Writer.Header().Set("Connection", "keep-alive")
@@ -160,6 +159,7 @@ func (h *SSEHub) ListHandler(c *gin.Context) {
 	c.JSON(200, gin.H{"notifications": notifications})
 }
 
+// 信息已读
 func (h *SSEHub) MarkReadHandler(c *gin.Context) {
 	userID, ok := sseAccountID(c)
 	if !ok {
@@ -188,6 +188,7 @@ func (h *SSEHub) MarkReadHandler(c *gin.Context) {
 	c.JSON(200, gin.H{"message": "ok"})
 }
 
+// 信息已读数量
 func (h *SSEHub) UnreadCountHandler(c *gin.Context) {
 	userID, ok := sseAccountID(c)
 	if !ok {
@@ -202,7 +203,6 @@ func (h *SSEHub) UnreadCountHandler(c *gin.Context) {
 	}
 	c.JSON(200, gin.H{"count": count})
 }
-
 func (h *SSEHub) RegisterRoutes(r *gin.Engine, group *gin.RouterGroup) {
 	group.GET("/stream", h.SSEHandler)
 	group.POST("/list", h.ListHandler)
@@ -210,4 +210,5 @@ func (h *SSEHub) RegisterRoutes(r *gin.Engine, group *gin.RouterGroup) {
 	group.POST("/unreadCount", h.UnreadCountHandler)
 }
 
+// 通过编译来检验  SSEHub 是否实现了 NotificationHub 接口
 var _ NotificationHub = (*SSEHub)(nil)

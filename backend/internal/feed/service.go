@@ -151,7 +151,8 @@ func (f *FeedService) ListLatest(ctx context.Context, limit int, latestBefore ti
 		return f.listLatestFromDB(ctx, limit, latestBefore, viewerAccountID)
 	}
 
-	// 获取 ZSET 中最老的一条数据
+	//  只读取一条，用于判断全局时间线 ZSET 是否为空
+	// 读取的是 最老的一条
 	zsetTail, err := f.rediscache.ZRangeWithScores(ctx, f.rediscache.Key("feed:global_timeline"), 0, 0)
 
 	if err != nil {
@@ -162,8 +163,10 @@ func (f *FeedService) ListLatest(ctx context.Context, limit int, latestBefore ti
 
 	if isZsetEmpty {
 		//全局静态锁：无视所有用户的不同时间戳游标
+		// 多个用户发送请求时  用的相同的key
 		sfKey := f.rediscache.Key("sf:fallback:global_timeline_rebuild")
 
+		// 相同key 只有一个请求会执行 其他请求会等待  ----> 只会重建一次zset
 		v, err, _ := f.requestGroup.Do(sfKey, func() (interface{}, error) {
 			// 无视游标，直接去 MySQL 捞最新的 1000 条
 			dbVideos, err := f.repo.ListLatest(ctx, 1000, time.Time{})
@@ -199,6 +202,7 @@ func (f *FeedService) ListLatest(ctx context.Context, limit int, latestBefore ti
 		return f.ListLatest(ctx, limit, latestBefore, viewerAccountID)
 	}
 
+	// 最老的作为 分界线
 	watermark := int64(zsetTail[0].Score)
 	reqTime := time.Now().UnixMilli()
 	if !latestBefore.IsZero() {
@@ -375,7 +379,7 @@ func (f *FeedService) ListByFollowing(ctx context.Context, limit int, latestBefo
 			if err := json.Unmarshal(b, &cached); err == nil {
 				return cached, nil
 			}
-		} else if rediscache.IsMiss(err) { // 缓存未命中
+		} else if f.rediscache.IsMiss(err) { // 缓存未命中
 			lockKey := "lock:" + cacheKey
 			// 缓存未命中，尝试加锁
 			token, locked, _ := f.rediscache.Lock(cacheCtx, lockKey, 500*time.Millisecond)
@@ -427,6 +431,7 @@ func (f *FeedService) ListByFollowing(ctx context.Context, limit int, latestBefo
 func (f *FeedService) ListByPopularity(ctx context.Context, limit int, reqAsOf int64, offset int, viewerAccountID uint, latestPopularity int64, latestBefore time.Time, latestIDBefore uint) (ListByPopularityResponse, error) {
 	// Redis 热榜（稳定分页：as_of + offset）
 	if f.rediscache != nil {
+		// 截断到分钟
 		asOf := time.Now().UTC().Truncate(time.Minute)
 		if reqAsOf > 0 {
 			asOf = time.Unix(reqAsOf, 0).UTC().Truncate(time.Minute)
@@ -558,6 +563,7 @@ func (f *FeedService) buildFeedVideos(ctx context.Context, videos []*video.Video
 	return feedVideos, nil
 }
 
+// 去除不存在id的video
 func buildOrderedResult(orderedIDs []uint, dataMap map[uint]*video.Video) []*video.Video {
 	res := make([]*video.Video, 0, len(orderedIDs))
 	for _, id := range orderedIDs {

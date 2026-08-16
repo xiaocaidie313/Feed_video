@@ -9,10 +9,11 @@ import (
 
 // 总的config
 type Config struct {
-	Server   ServerConfig   `yaml :"serve"`
-	Database DataBaseConfig `yaml :"database"`
-	Redis    RedisConfig    `yaml :"redis"`
-	RabbitMQ RabbitMQConfig `yaml :"rabbitmq"`
+	Server        ServerConfig        `yaml:"server"`
+	Database      DataBaseConfig      `yaml:"database"`
+	Redis         RedisConfig         `yaml:"redis"`
+	RabbitMQ      RabbitMQConfig      `yaml:"rabbitmq"`
+	Observability ObservabilityConfig `yaml:"observability"`
 }
 
 type ServerConfig struct {
@@ -37,6 +38,14 @@ type RabbitMQConfig struct {
 	Port     int    `yaml :"port"`
 	Username string `yaml :"username"`
 	Password string `yaml :"password"`
+}
+type ObservabilityConfig struct {
+	Pprof PprofConfig `yaml:"pprof"`
+}
+type PprofConfig struct {
+	Enabled    bool   `yaml:"enabled"`
+	ApiAddr    string `yaml:"api_addr"`
+	WorkerAddr string `yaml:"worker_addr"`
 }
 
 // 传入config.yaml
@@ -69,7 +78,7 @@ func ApplyEnvOverrides(cfg *Config) {
 	}
 	if v := os.Getenv("MYSQL_PORT"); v != "" {
 		if port, err := strconv.Atoi(v); err == nil {
-			cfg.Database.Port = port
+			cfg.Database.Port = strconv.Itoa(port)
 		}
 	}
 	if v := os.Getenv("MYSQL_USER"); v != "" {
@@ -82,7 +91,7 @@ func ApplyEnvOverrides(cfg *Config) {
 		cfg.Database.Password = v
 	}
 	if v := os.Getenv("MYSQL_DATABASE"); v != "" {
-		cfg.Database.DBName = v
+		cfg.Database.DbName = v
 	}
 	if v := os.Getenv("REDIS_HOST"); v != "" {
 		cfg.Redis.Host = v
@@ -122,11 +131,11 @@ func LoadDefaultConfig() (*Config, error) {
 			Port: 8080,
 		},
 		Database: DataBaseConfig{
-			Port:     3306,
+			Port:     "3306",
 			User:     "root",
 			Host:     "localhost",
 			Password: "root",
-			DBName:   "test",
+			DbName:   "test",
 		},
 		Redis: RedisConfig{
 			Host:     "localhost",
@@ -139,6 +148,13 @@ func LoadDefaultConfig() (*Config, error) {
 			Port:     5672,
 			Username: "guest",
 			Password: "guest",
+		},
+		Observability: ObservabilityConfig{
+			Pprof: PprofConfig{
+				Enabled:    true,
+				ApiAddr:    "localhost:6060",
+				WorkerAddr: "localhost:6061",
+			},
 		},
 	}
 	ApplyEnvOverrides(cfg)
