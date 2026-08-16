@@ -14,6 +14,11 @@ func NewCommentDB(db *gorm.DB) *CommentRepo {
 	return &CommentRepo{db: db}
 }
 
+// NewCommentRepository is an alias of NewCommentDB.
+func NewCommentRepository(db *gorm.DB) *CommentRepo {
+	return NewCommentDB(db)
+}
+
 func (r *CommentRepo) CreateComment(ctx context.Context, comment *Comment) error {
 	return r.db.WithContext(ctx).Create(comment).Error
 }

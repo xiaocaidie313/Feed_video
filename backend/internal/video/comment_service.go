@@ -84,7 +84,7 @@ func (s *CommentService) Publish(ctx context.Context, comment *Comment) error {
 
 	// Fallback: direct Redis update when popularity MQ publish fails.
 	if !redisEnqueued {
-		s.cache.UpdatePopularityCache(ctx, comment.VideoID, 1)
+		UpdatePopularityCache(ctx, s.cache, comment.VideoID, 1)
 	}
 	s.notifyMentions(ctx, comment)
 	return nil

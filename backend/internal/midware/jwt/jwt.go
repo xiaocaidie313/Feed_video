@@ -61,6 +61,36 @@ func JWTAuth(accountService *account.AccountService) gin.HandlerFunc {
 	}
 }
 
+// SoftJWTAuth 可选鉴权：有合法 token 则写入 accountID，否则继续匿名访问。
+func SoftJWTAuth(accountService *account.AccountService) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		authHeader := c.GetHeader("Authorization")
+		if authHeader == "" {
+			c.Next()
+			return
+		}
+		parts := strings.SplitN(authHeader, " ", 2)
+		if len(parts) != 2 || parts[0] != "Bearer" || parts[1] == "" {
+			c.Next()
+			return
+		}
+		tokenString := parts[1]
+		claims, err := auth.ParseToken(tokenString)
+		if err != nil || claims.AccountID == 0 {
+			c.Next()
+			return
+		}
+		acc, err := accountService.FindByID(c.Request.Context(), claims.AccountID)
+		if err != nil || acc == nil || acc.Token == "" || acc.Token != tokenString {
+			c.Next()
+			return
+		}
+		c.Set(ContextAccountID, claims.AccountID)
+		c.Set(ContextUsername, claims.UserName)
+		c.Next()
+	}
+}
+
 func GetAccountID(c *gin.Context) (uint, error) {
 	val, exists := c.Get(ContextAccountID)
 	if !exists {

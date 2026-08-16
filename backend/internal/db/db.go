@@ -2,6 +2,10 @@ package db
 
 import (
 	"feedvid/internal/account"
+	"feedvid/internal/message"
+	"feedvid/internal/social"
+	"feedvid/internal/video"
+	"feedvid/internal/worker"
 	"fmt"
 
 	"gorm.io/driver/mysql"

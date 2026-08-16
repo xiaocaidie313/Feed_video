@@ -61,13 +61,6 @@ func (ss *SocialService) UnFollow(ctx context.Context, social *Social) error {
 
 	// 失效缓存
 	ss.invalidateFollowingFeedCache(context.Background(), social.FollowerID)
-
-	// 最后发 MQ
-	if ss.socialMQ != nil {
-		if err := s.socialMQ.UnFollow(ctx, social.FollowerID, social.VloggerID); err != nil {
-			log.Printf("social MQ UnFollow 发布失败: %v", err)
-		}
-	}
 	return nil
 }
 func (ss *SocialService) CountAllFollowers(ctx context.Context, vloggerID uint) (int64, error) {

@@ -115,7 +115,13 @@ func main() {
 	var sqlDB *gorm.DB
 	connectWithRetry("MySQL", 10, func() error {
 		var err error
-		sqlDB, err = db.NewDB(cfg.Database)
+		sqlDB, err = db.NewDB(db.Dbconfig{
+			Host:     cfg.Database.Host,
+			User:     cfg.Database.User,
+			Port:     cfg.Database.Port,
+			Password: cfg.Database.Password,
+			DbName:   cfg.Database.DbName,
+		})
 		return err
 	})
 	defer db.CloseDB(sqlDB)
@@ -170,17 +176,17 @@ func main() {
 
 	// 准备 repo
 	socialRepo := social.NewSocialRepository(sqlDB)
-	videoRepo := video.NewVideoRepository(sqlDB)
+	videoRepo := video.NewVideoRepo(sqlDB)
 	likeRepo := video.NewLikeRepo(sqlDB)
-	commentRepo := video.NewCommentRepository(sqlDB)
+	commentRepo := video.NewCommentDB(sqlDB)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	pprofServer, err := observability.NewPprofServer(
 		"Worker",
-		cfg.ObservabilityConfig.Pprof.Enabled,
-		cfg.ObservabilityConfig.Pprof.WorkerAddr,
+		cfg.Observability.Pprof.Enabled,
+		cfg.Observability.Pprof.WorkerAddr,
 	)
 	if err != nil {
 		log.Printf("Failed to start worker pprof server: %v", err)

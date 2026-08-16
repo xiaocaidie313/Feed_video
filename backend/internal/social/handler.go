@@ -170,7 +170,7 @@ func (h *SocialHandler) GetAllFollowers(c *gin.Context) {
 	if followers == nil {
 		followers = []*account.Account{}
 	}
-	followerCount, _ := h.service.CountFollowers(c.Request.Context(), vloggerID)
+	followerCount, _ := h.service.CountAllFollowers(c.Request.Context(), vloggerID)
 	c.JSON(http.StatusOK, GetAllFollowersResponse{Followers: followers, FollowerCount: followerCount})
 }
 

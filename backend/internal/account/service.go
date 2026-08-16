@@ -167,9 +167,12 @@ func (as *AccountService) ChangePassword(ctx context.Context, username string, n
 }
 
 func (as *AccountService) EditProfile(ctx context.Context, username string, newName string) error {
-	acc, _ := as.repo.FindOneUserByUserame(ctx, username)
 	if newName == "" {
 		return ErrNameIsEmpty
+	}
+	_, err := as.repo.FindOneUserByUserame(ctx, username)
+	if err != nil {
+		return err
 	}
 	return nil
 }
@@ -224,11 +227,8 @@ func (as *AccountService) RefreshAccessToken(ctx context.Context, refreshToken s
 			if parseErr == nil {
 				account, err := as.FindByID(ctx, uint(id))
 				if err == nil && account != nil && account.RefreshToken == refreshToken {
-					newToken, err := auth.GenerateToken(account.ID, account.Username)
-					if err != nil {
-						return "", 0, "", err
-					}
-					if err := as.accountRepository.UpdateToken(ctx, account.ID, newToken); err != nil {
+					newToken := auth.GenerateToken(account.ID, account.Username)
+					if err := as.repo.UpdateToken(ctx, account.ID, newToken); err != nil {
 						return "", 0, "", err
 					}
 					if err := as.cache.SetBytes(cacheCtx, as.cache.Key("account:%d", account.ID), []byte(newToken), 24*time.Hour); err != nil {
@@ -245,11 +245,8 @@ func (as *AccountService) RefreshAccessToken(ctx context.Context, refreshToken s
 	}
 	for _, acc := range accounts {
 		if acc.RefreshToken == refreshToken {
-			newToken, err := auth.GenerateToken(acc.ID, acc.Username)
-			if err != nil {
-				return "", 0, "", err
-			}
-			if err := as.accountRepository.UpdateToken(ctx, acc.ID, newToken); err != nil {
+			newToken := auth.GenerateToken(acc.ID, acc.Username)
+			if err := as.repo.UpdateToken(ctx, acc.ID, newToken); err != nil {
 				return "", 0, "", err
 			}
 			return newToken, acc.ID, acc.Username, nil
