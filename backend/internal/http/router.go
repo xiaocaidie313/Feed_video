@@ -49,7 +49,7 @@ func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *g
 		accountGroup.POST("/refresh", accountHandler.Refresh)
 	}
 	protectedAccountGroup := accountGroup.Group("")
-	protectedAccountGroup.Use(jwt.JWTAuth(accountService))
+	protectedAccountGroup.Use(jwt.JWTAuth(accountRepository, cache))
 	{
 		protectedAccountGroup.POST("/logout", accountHandler.Logout)
 		protectedAccountGroup.POST("/rename", accountHandler.Rename)
@@ -74,7 +74,7 @@ func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *g
 		videoGroup.POST("/getDetail", videoHandler.GetDetail)
 	}
 	protectedVideoGroup := videoGroup.Group("")
-	protectedVideoGroup.Use(jwt.JWTAuth(accountService))
+	protectedVideoGroup.Use(jwt.JWTAuth(accountRepository, cache))
 	{
 		protectedVideoGroup.POST("/uploadVideo", videoHandler.UploadVideo)
 		protectedVideoGroup.POST("/uploadCover", videoHandler.UploadCover)
@@ -97,7 +97,7 @@ func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *g
 	likeHandler := video.NewLikeHandler(likeService)
 	likeGroup := r.Group("/like")
 	protectedLikeGroup := likeGroup.Group("")
-	protectedLikeGroup.Use(jwt.JWTAuth(accountService))
+	protectedLikeGroup.Use(jwt.JWTAuth(accountRepository, cache))
 	{
 		protectedLikeGroup.POST("/like", likeLimiter, likeHandler.Like)
 		protectedLikeGroup.POST("/unlike", likeLimiter, likeHandler.Unlike)
@@ -119,7 +119,7 @@ func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *g
 		commentGroup.POST("/listAll", commentHandler.GetAllComments)
 	}
 	protectedCommentGroup := commentGroup.Group("")
-	protectedCommentGroup.Use(jwt.JWTAuth(accountService))
+	protectedCommentGroup.Use(jwt.JWTAuth(accountRepository, cache))
 	{
 		protectedCommentGroup.POST("/publish", commentLimiter, commentHandler.PublishComment)
 		protectedCommentGroup.POST("/delete", commentLimiter, commentHandler.DeleteComment)
@@ -137,7 +137,7 @@ func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *g
 	socialHandler := social.NewSocialHandler(socialService)
 	socialGroup := r.Group("/social")
 	protectedSocialGroup := socialGroup.Group("")
-	protectedSocialGroup.Use(jwt.JWTAuth(accountService))
+	protectedSocialGroup.Use(jwt.JWTAuth(accountRepository, cache))
 	{
 		protectedSocialGroup.POST("/follow", socialLimiter, socialHandler.Follow)
 		protectedSocialGroup.POST("/unfollow", socialLimiter, socialHandler.UnFollow)
@@ -180,7 +180,7 @@ func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *g
 	feedService := feed.NewFeedService(feedRepository, likeRepository, cache)
 	feedHandler := feed.NewFeedHandler(feedService)
 	feedGroup := r.Group("/feed")
-	feedGroup.Use(jwt.SoftJWTAuth(accountService))
+	feedGroup.Use(jwt.SoftJWTAuth(accountRepository, cache))
 	{
 		feedGroup.POST("/listLatest", feedHandler.ListLatest)
 		feedGroup.POST("/listLikesCount", feedHandler.ListLikesCount)
@@ -188,7 +188,7 @@ func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *g
 		feedGroup.POST("/listByTag", feedHandler.ListByTag)
 	}
 	protectedFeedGroup := feedGroup.Group("")
-	protectedFeedGroup.Use(jwt.JWTAuth(accountService))
+	protectedFeedGroup.Use(jwt.JWTAuth(accountRepository, cache))
 	{
 		protectedFeedGroup.POST("/listByFollowing", feedHandler.ListByFollowing)
 	}
@@ -199,7 +199,7 @@ func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *g
 	messageHandler := message.NewHandler(messageService)
 	messageGroup := r.Group("/message")
 	protectedMessageGroup := messageGroup.Group("")
-	protectedMessageGroup.Use(jwt.JWTAuth(accountService))
+	protectedMessageGroup.Use(jwt.JWTAuth(accountRepository, cache))
 	{
 		protectedMessageGroup.POST("/send", messageHandler.Send)
 		protectedMessageGroup.POST("/list", messageHandler.List)

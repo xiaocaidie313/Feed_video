@@ -33,6 +33,20 @@ func NewAccountService(repo *AccountRepo, cache *rediscache.Client) *AccountServ
 	return &AccountService{repo: repo, cache: cache}
 }
 
+func (as *AccountService) Repo() *AccountRepo {
+	if as == nil {
+		return nil
+	}
+	return as.repo
+}
+
+func (as *AccountService) Cache() *rediscache.Client {
+	if as == nil {
+		return nil
+	}
+	return as.cache
+}
+
 // 验证密码
 func VerifyPassword(ctx context.Context, hashedPassword string, password string) error {
 	if err := bcrypt.CompareHashAndPassword([]byte(hashedPassword), []byte(password)); err != nil {

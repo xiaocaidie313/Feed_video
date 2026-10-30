@@ -42,6 +42,7 @@ func CloseDB(db *gorm.DB) error {
 	return sqldb.Close()
 }
 func AutoMigrate(db *gorm.DB) error {
+	//  一次性迁移所有表
 	return db.AutoMigrate(
 		&account.Account{}, &video.Video{}, &video.Like{}, &video.Comment{},
 		&social.Social{}, &video.OutboxMsg{}, &video.Tag{}, &video.VideoTag{},

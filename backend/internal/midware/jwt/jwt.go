@@ -1,12 +1,14 @@
 package jwt
 
 import (
+	"context"
 	"errors"
-	"net/http"
-	"strings"
-
 	"feedvid/internal/account"
 	"feedvid/internal/auth"
+	rediscache "feedvid/internal/midware/redis"
+	"net/http"
+	"strings"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -17,77 +19,55 @@ const (
 )
 
 // JWTAuth 校验 Bearer JWT，通过后把用户信息写入 gin.Context。
-func JWTAuth(accountService *account.AccountService) gin.HandlerFunc {
+func JWTAuth(accountRepo *account.AccountRepo, cache *rediscache.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		// 劫取bearer token 解析 --》获得其中的 claims
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing authorization header"})
 			return
 		}
 
 		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" || parts[1] == "" {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization header"})
 			return
 		}
-		tokenString := parts[1] //bear的 token
+
+		tokenString := parts[1]
 
 		claims, err := auth.ParseToken(tokenString)
 		if err != nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			return
 		}
-		if claims.AccountID == 0 {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-			return
-		}
-
-		acc, err := accountService.FindByID(c.Request.Context(), claims.AccountID)
-		if err != nil || acc == nil {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-			return
-		}
-
-		// 与库中当前会话 token 比对，登出/换票后旧 JWT 失效
-		if acc.Token == "" || acc.Token != tokenString {
-			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "Unauthorized"})
-			return
-		}
-
-		c.Set(ContextAccountID, claims.AccountID)
-		c.Set(ContextUsername, claims.UserName)
-		c.Next()
+		check(c, claims, tokenString, accountRepo, cache)
 	}
 }
 
 // SoftJWTAuth 可选鉴权：有合法 token 则写入 accountID，否则继续匿名访问。
-func SoftJWTAuth(accountService *account.AccountService) gin.HandlerFunc {
+func SoftJWTAuth(accountRepo *account.AccountRepo, cache *rediscache.Client) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		authHeader := c.GetHeader("Authorization")
 		if authHeader == "" {
 			c.Next()
 			return
 		}
+
 		parts := strings.SplitN(authHeader, " ", 2)
-		if len(parts) != 2 || parts[0] != "Bearer" || parts[1] == "" {
-			c.Next()
+		if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid authorization header"})
 			return
 		}
+
 		tokenString := parts[1]
+
 		claims, err := auth.ParseToken(tokenString)
-		if err != nil || claims.AccountID == 0 {
-			c.Next()
+		if err != nil {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired token"})
 			return
 		}
-		acc, err := accountService.FindByID(c.Request.Context(), claims.AccountID)
-		if err != nil || acc == nil || acc.Token == "" || acc.Token != tokenString {
-			c.Next()
-			return
-		}
-		c.Set(ContextAccountID, claims.AccountID)
-		c.Set(ContextUsername, claims.UserName)
-		c.Next()
+
+		check(c, claims, tokenString, accountRepo, cache)
 	}
 }
 
@@ -113,4 +93,45 @@ func GetUsername(c *gin.Context) (string, error) {
 		return "", errors.New("username has invalid type")
 	}
 	return username, nil
+}
+
+func check(c *gin.Context, claims *auth.Claims, tokenString string, accountRepo *account.AccountRepo, cache *rediscache.Client) (bool, error) {
+	// 先查redis
+
+	if cache != nil {
+		// 创建查询key -》 存放token
+		key := cache.Key("accountID:%d", claims.AccountID)
+		cacheCtx, cancel := context.WithTimeout(c.Request.Context(), 50*time.Millisecond)
+		defer cancel()
+
+		b, err := cache.GetBytes(cacheCtx, key)
+		if err == nil {
+			if string(b) != tokenString {
+				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token has been revoked"})
+				return false, nil
+			}
+			c.Set("accountID", claims.AccountID)
+			c.Set("username", claims.UserName)
+			c.Next()
+			return true, nil
+		}
+	}
+	// redis 没找到 查db
+
+	accountInfo, err := accountRepo.FindUserByAccountID(c.Request.Context(), claims.AccountID)
+	if err != nil || accountInfo.Token == "" || accountInfo.Token != tokenString {
+		c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "token has been revoked"})
+		return false, err
+	}
+	if cache != nil {
+		key := cache.Key("accountID:%d", claims.AccountID)
+		cacheCtx, cancle := context.WithTimeout(c.Request.Context(), 50*time.Millisecond)
+		defer cancle()
+		cache.SetBytes(cacheCtx, key, []byte(tokenString), 0)
+
+	}
+	c.Set("accountID", claims.AccountID)
+	c.Set("username", claims.UserName)
+	c.Next()
+	return true, nil
 }
