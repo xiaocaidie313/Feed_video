@@ -2,34 +2,34 @@ package account
 
 import (
 	"context"
-	"log"
-
 	"gorm.io/gorm"
+	"time"
 )
 
 type AccessToken string
 type RefreshToken string
+type AccountRepo struct{ db *gorm.DB }
 
-type AccountRepo struct {
-	db *gorm.DB
+func NewAccountRepo(db *gorm.DB) *AccountRepo { return &AccountRepo{db: db} }
+func (r *AccountRepo) CreateAccount(ctx context.Context, a *Account) error {
+	return r.db.WithContext(ctx).Create(a).Error
 }
-
-func NewAccountRepo(db *gorm.DB) *AccountRepo {
-	return &AccountRepo{db: db}
+func (r *AccountRepo) FindOneUserByUserame(ctx context.Context, name string) (*Account, error) {
+	var a Account
+	err := r.db.WithContext(ctx).Where("username = ?", name).First(&a).Error
+	return &a, err
 }
-
-// 单纯的把 account 写入数据库  是初始化好的accout
-func (ar *AccountRepo) CreateAccount(ctx context.Context, acc *Account) error {
-
-	if err := ar.db.WithContext(ctx).Create(acc).Error; err != nil {
-		log.Printf("failed to create account: %v", err)
-		return err
-	}
-	return nil
+func (r *AccountRepo) FindUserByAccountID(ctx context.Context, id uint) (*Account, error) {
+	var a Account
+	err := r.db.WithContext(ctx).First(&a, id).Error
+	return &a, err
 }
-
-func (ar *AccountRepo) Rename(ctx context.Context, id uint, newUsername string) error {
-	result := ar.db.WithContext(ctx).Model(&Account{}).Where("id = ?", id).Update("username", newUsername)
+func (r *AccountRepo) Find20UsersByUsername(ctx context.Context, name string) ([]Account, error) {
+	var accounts []Account
+	err := r.db.WithContext(ctx).Where("username LIKE ?", "%"+name+"%").Limit(20).Find(&accounts).Error
+	return accounts, err
+}
+func requireChanged(result *gorm.DB) error {
 	if result.Error != nil {
 		return result.Error
 	}
@@ -38,112 +38,48 @@ func (ar *AccountRepo) Rename(ctx context.Context, id uint, newUsername string) 
 	}
 	return nil
 }
-
-// 重命名 并更新token
-func (ar *AccountRepo) RenameWithToken(ctx context.Context, token string, id uint, newUsername string) error {
-	//@todo 学习一下gorm的transaction
-	return ar.db.Transaction(func(tx *gorm.DB) error {
-		result := tx.WithContext(ctx).Model(&Account{}).Where("id = ?", id).Update("username", newUsername)
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound
-		}
-		if err := tx.WithContext(ctx).Model(&Account{}).Where("id = ?", id).Update("token", token).Error; err != nil {
-			return err
-		}
-		return nil
-	})
-
+func (r *AccountRepo) Rename(ctx context.Context, id uint, name string) error {
+	return requireChanged(r.db.WithContext(ctx).Model(&Account{}).Where("id = ?", id).Update("username", name))
 }
-
-// 查找单个用户
-func (ar *AccountRepo) FindOneUserByUserame(ctx context.Context, username string) (*Account, error) {
-	var acc Account
-	if err := ar.db.WithContext(ctx).Where("username = ?", username).First(&acc).Error; err != nil {
-		return nil, err
-	}
-	return &acc, nil
+func (r *AccountRepo) RenameWithToken(ctx context.Context, oldToken, newToken string, id uint, name string) error {
+	return requireChanged(r.db.WithContext(ctx).Model(&Account{}).Where("id = ? AND token = ?", id, oldToken).
+		Updates(map[string]interface{}{"username": name, "token": newToken}))
 }
-
-// 查找单个用户 by  id
-func (ar *AccountRepo) FindUserByAccountID(ctx context.Context, id uint) (*Account, error) {
-	var acc Account
-	if err := ar.db.WithContext(ctx).First(&acc, id).Error; err != nil {
-		return nil, err
-	}
-	return &acc, nil
+func (r *AccountRepo) Login(ctx context.Context, id uint, passwordHash, access, refresh string, expires time.Time) error {
+	// The password predicate prevents an in-flight old-password login from
+	// restoring a session after a concurrent password change.
+	return requireChanged(r.db.WithContext(ctx).Model(&Account{}).Where("id = ? AND password = ?", id, passwordHash).
+		Updates(map[string]interface{}{"token": access, "refresh_token": refresh, "refresh_expires_at": expires}))
 }
-
-// 找20个同名用户  // @todo 判断最大时候超过 20
-func (ar *AccountRepo) Find20UsersByUsername(ctx context.Context, username string) ([]Account, error) {
-	var accs []Account
-	if err := ar.db.WithContext(ctx).
-		Where("username LIKE ?", "%"+username+"%").
-		Limit(20).
-		Find(&accs).Error; err != nil {
-		return nil, err
-	}
-	return accs, nil
+func (r *AccountRepo) Logout(ctx context.Context, id uint) error {
+	return r.db.WithContext(ctx).Model(&Account{}).Where("id = ?", id).
+		Updates(map[string]interface{}{"token": "", "refresh_token": "", "refresh_expires_at": nil}).Error
 }
-
-func (ar *AccountRepo) Login(ctx context.Context, id uint, accessToken string, refreshToken string) error {
-	return ar.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		result := tx.Model(&Account{}).Where("id = ?", id).Updates(map[string]interface{}{
-			"token":         accessToken,
-			"refresh_token": refreshToken,
-		})
-		if result.Error != nil {
-			return result.Error
-		}
-		if result.RowsAffected == 0 {
-			return gorm.ErrRecordNotFound
-		}
-		return nil
-	})
+func (r *AccountRepo) ChangePassword(ctx context.Context, id uint, oldHash, newHash string) error {
+	// A single UPDATE changes the password and revokes both tokens atomically.
+	return requireChanged(r.db.WithContext(ctx).Model(&Account{}).Where("id = ? AND password = ?", id, oldHash).
+		Updates(map[string]interface{}{"password": newHash, "token": "", "refresh_token": "", "refresh_expires_at": nil}))
 }
-
-// 登出清除
-func (ar *AccountRepo) Logout(ctx context.Context, id uint) error {
-	result := ar.db.WithContext(ctx).Model(&Account{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"token":         "",
-		"refresh_token": "",
-	})
-	if result.Error != nil {
-		return result.Error
-	}
-	if result.RowsAffected == 0 {
-		return gorm.ErrRecordNotFound
-	}
-	return nil
+func (r *AccountRepo) FindByRefreshToken(ctx context.Context, token string, now time.Time) (*Account, error) {
+	var a Account
+	err := r.db.WithContext(ctx).Where("refresh_token = ? AND refresh_expires_at > ?", token, now).First(&a).Error
+	return &a, err
 }
-
-func (ar *AccountRepo) ChangePassword(ctx context.Context, id uint, newHashedPassword string) error {
-	return ar.db.Transaction(func(tx *gorm.DB) error {
-		if err := tx.WithContext(ctx).Model(&Account{}).Where("id = ?", id).Update("password", newHashedPassword).Error; err != nil {
-			return err
-		}
-		return nil
-	})
+func (r *AccountRepo) RefreshAccessToken(ctx context.Context, id uint, refresh, access string, now time.Time) error {
+	// Recheck the refresh token in the UPDATE so logout cannot be undone by a
+	// refresh request that read the old session just before logout.
+	return requireChanged(r.db.WithContext(ctx).Model(&Account{}).
+		Where("id = ? AND refresh_token = ? AND refresh_expires_at > ?", id, refresh, now).
+		Update("token", access))
 }
-
-func (ar *AccountRepo) UpdateAvatar(ctx context.Context, accountID uint, avatarURL string) error {
-	return ar.db.WithContext(ctx).Model(&Account{}).Where("id = ?", accountID).Update("avatar_url", avatarURL).Error
+func (r *AccountRepo) UpdateAvatar(ctx context.Context, id uint, url string) error {
+	return r.UpdateFields(ctx, id, map[string]interface{}{"avatar_url": url})
 }
-
-func (ar *AccountRepo) UpdateToken(ctx context.Context, id uint, token string) error {
-	return ar.db.WithContext(ctx).Model(&Account{}).Where("id = ?", id).Update("token", token).Error
+func (r *AccountRepo) UpdateFields(ctx context.Context, id uint, updates map[string]interface{}) error {
+	return r.db.WithContext(ctx).Model(&Account{}).Where("id = ?", id).Updates(updates).Error
 }
-
-func (ar *AccountRepo) UpdateFields(ctx context.Context, id uint, updates map[string]interface{}) error {
-	return ar.db.WithContext(ctx).Model(&Account{}).Where("id = ?", id).Updates(updates).Error
-}
-
-func (ar *AccountRepo) FindAllAccounts(ctx context.Context) ([]*Account, error) {
+func (r *AccountRepo) FindAllAccounts(ctx context.Context) ([]*Account, error) {
 	var accounts []*Account
-	if err := ar.db.WithContext(ctx).Find(&accounts).Error; err != nil {
-		return nil, err
-	}
-	return accounts, nil
+	err := r.db.WithContext(ctx).Find(&accounts).Error
+	return accounts, err
 }

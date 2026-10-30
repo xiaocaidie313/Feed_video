@@ -1,18 +1,21 @@
 package account
 
+import "time"
+
 type Account struct {
-	ID           uint   `gorm:"primaryKey" json:"id"`
-	Username     string `gorm:"unique" json:"username"`
-	Password     string `json:"-"`
-	Token        string `json:"-"`
-	RefreshToken string `json:"-"`
-	AvatarURL    string `gorm:"type:varchar(512)" json:"avatar_url,omitempty"`
-	Bio          string `gorm:"type:varchar(255)" json:"bio,omitempty"`
+	ID               uint       `gorm:"primaryKey" json:"id"`
+	Username         string     `gorm:"unique" json:"username"`
+	Password         string     `json:"-"`
+	Token            string     `json:"-"`
+	RefreshToken     string     `gorm:"size:64;index" json:"-"`
+	RefreshExpiresAt *time.Time `json:"-"`
+	AvatarURL        string     `gorm:"type:varchar(512)" json:"avatar_url,omitempty"`
+	Bio              string     `gorm:"type:varchar(255)" json:"bio,omitempty"`
 }
 
 type CreateAccountRequest struct {
 	Username string `json:"username"`
-	Password string `json:"password"`
+	Password string `json:"password" binding:"required"`
 }
 
 type RenameRequest struct {
@@ -41,13 +44,13 @@ type FindByUsernameResponse struct {
 
 type ChangePasswordRequest struct {
 	Username    string `json:"username"`
-	OldPassword string `json:"old_password"`
-	NewPassword string `json:"new_password"`
+	OldPassword string `json:"old_password" binding:"required"`
+	NewPassword string `json:"new_password" binding:"required"`
 }
 
 type LoginRequest struct {
 	Username string `json:"username"`
-	Password string `json:"password"`
+	Password string `json:"password" binding:"required"`
 }
 
 type LoginResponse struct {

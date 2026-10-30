@@ -6,7 +6,7 @@ import (
 )
 
 var (
-	ErrUnauthorized = errors.New("unauthorized") // error的 interface 本质是 string
+	ErrUnauthorized = errors.New("unauthorized")
 	ErrValidation   = errors.New("validation error")
 	ErrNotFound     = errors.New("not found")
 	ErrInternal     = errors.New("internal server error")
@@ -15,16 +15,16 @@ var (
 func MathErrorsToStatus(err error) int {
 	switch {
 	case err == nil:
-		return http.StatusOK
+		return http.StatusOK // 200
 	case errors.Is(err, ErrUnauthorized):
-		return http.StatusUnauthorized
+		return http.StatusUnauthorized // 401
 	case errors.Is(err, ErrValidation):
-		return http.StatusBadRequest
+		return http.StatusBadRequest // 400
 	case errors.Is(err, ErrNotFound):
-		return http.StatusNotFound
+		return http.StatusNotFound // 404
 	case errors.Is(err, ErrInternal):
 		return http.StatusInternalServerError
 	default:
-		return http.StatusInternalServerError
+		return http.StatusInternalServerError //500
 	}
 }

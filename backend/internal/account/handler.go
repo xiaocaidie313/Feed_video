@@ -13,6 +13,8 @@ import (
 	"strings"
 
 	"feedvid/internal/apierror"
+	"feedvid/internal/auth"
+	"log"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -28,14 +30,11 @@ func NewAccountHandler(accountService *AccountService) *AccountHandler {
 func (h *AccountHandler) CreateAccount(c *gin.Context) {
 	var req CreateAccountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(apierror.MathErrorsToStatus(err), gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": "username and password are required"})
 		return
 	}
-	if err := h.accountService.CreateAccount(c.Request.Context(), &Account{
-		Username: req.Username,
-		Password: req.Password,
-	}); err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
+	if err := h.accountService.CreateAccount(c.Request.Context(), &Account{Username: req.Username, Password: req.Password}); err != nil {
+		writeAccountError(c, err)
 		return
 	}
 	c.JSON(200, gin.H{"message": "account created"})
@@ -44,29 +43,17 @@ func (h *AccountHandler) CreateAccount(c *gin.Context) {
 func (h *AccountHandler) Rename(c *gin.Context) {
 	var req RenameRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(apierror.MathErrorsToStatus(err), gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": "invalid request"})
 		return
 	}
-	accountID, err := getAccountID(c)
+	id, err := getAccountID(c)
 	if err != nil {
-		c.JSON(apierror.MathErrorsToStatus(err), gin.H{"error": err.Error()})
+		c.JSON(401, gin.H{"error": "missing account"})
 		return
 	}
-	token, err := h.accountService.Rename(c.Request.Context(), accountID, req.NewUsername)
+	token, err := h.accountService.Rename(c.Request.Context(), id, req.NewUsername)
 	if err != nil {
-		if errors.Is(err, ErrNameIsEmpty) {
-			c.JSON(apierror.MathErrorsToStatus(err), gin.H{"error": err.Error()})
-			return
-		}
-		if errors.Is(err, ErrNameAlreadyExists) {
-			c.JSON(409, gin.H{"error": err.Error()})
-			return
-		}
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(404, gin.H{"error": "account not found"})
-			return
-		}
-		c.JSON(500, gin.H{"error": err.Error()})
+		writeAccountError(c, err)
 		return
 	}
 	c.JSON(200, gin.H{"token": token})
@@ -75,14 +62,19 @@ func (h *AccountHandler) Rename(c *gin.Context) {
 func (h *AccountHandler) ChangePassword(c *gin.Context) {
 	var req ChangePasswordRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(apierror.MathErrorsToStatus(err), gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": "old_password and new_password are required"})
 		return
 	}
-	if err := h.accountService.ChangePassword(c.Request.Context(), req.Username, req.NewPassword); err != nil {
-		c.JSON(400, gin.H{"error": "unsuccessfully password changed"})
+	id, err := getAccountID(c)
+	if err != nil {
+		c.JSON(401, gin.H{"error": "missing account"})
 		return
 	}
-	c.JSON(200, gin.H{"message": "successfully password changed"})
+	if err := h.accountService.ChangePassword(c.Request.Context(), id, req.OldPassword, req.NewPassword); err != nil {
+		writeAccountError(c, err)
+		return
+	}
+	c.JSON(200, gin.H{"message": "password changed; please log in again"})
 }
 
 func (h *AccountHandler) FindByID(c *gin.Context) {
@@ -115,21 +107,21 @@ func (h *AccountHandler) FindByUsername(c *gin.Context) {
 
 func (h *AccountHandler) Login(c *gin.Context) {
 	var req LoginRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(apierror.MathErrorsToStatus(err), gin.H{"error": err.Error()})
+	if err := c.ShouldBindJSON(&req); err != nil || req.Username == "" || req.Password == "" {
+		c.JSON(400, gin.H{"error": "username and password are required"})
 		return
 	}
-	account, err := h.accountService.FindByUsername(c.Request.Context(), req.Username)
+	access, refresh, err := h.accountService.Login(c.Request.Context(), req.Username, req.Password)
 	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
+		writeAccountError(c, err)
 		return
 	}
-	accessToken, refreshToken, err := h.accountService.Login(c.Request.Context(), req.Username, req.Password)
+	claims, err := auth.ParseToken(access)
 	if err != nil {
-		c.JSON(500, gin.H{"error": err.Error()})
+		writeAccountError(c, err)
 		return
 	}
-	c.JSON(200, LoginResponse{Token: accessToken, RefreshToken: refreshToken, AccountID: account.ID, Username: account.Username})
+	c.JSON(200, LoginResponse{Token: access, RefreshToken: refresh, AccountID: claims.AccountID, Username: claims.UserName})
 }
 
 func (h *AccountHandler) Logout(c *gin.Context) {
@@ -213,16 +205,16 @@ func (h *AccountHandler) UpdateProfile(c *gin.Context) {
 
 func (h *AccountHandler) Refresh(c *gin.Context) {
 	var req RefreshRequest
-	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(apierror.MathErrorsToStatus(err), gin.H{"error": err.Error()})
+	if err := c.ShouldBindJSON(&req); err != nil || req.RefreshToken == "" {
+		c.JSON(400, gin.H{"error": "refresh_token is required"})
 		return
 	}
-	newToken, accountID, username, err := h.accountService.RefreshAccessToken(c.Request.Context(), req.RefreshToken)
+	token, id, name, err := h.accountService.RefreshAccessToken(c.Request.Context(), req.RefreshToken)
 	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid refresh token"})
+		writeAccountError(c, err)
 		return
 	}
-	c.JSON(http.StatusOK, LoginResponse{Token: newToken, AccountID: accountID, Username: username})
+	c.JSON(200, LoginResponse{Token: token, RefreshToken: req.RefreshToken, AccountID: id, Username: name})
 }
 
 func randHex(n int) (string, error) {
@@ -254,4 +246,20 @@ func getAccountID(c *gin.Context) (uint, error) {
 		return 0, errors.New("accountID has invalid type")
 	}
 	return id, nil
+}
+
+func writeAccountError(c *gin.Context, err error) {
+	switch {
+	case errors.Is(err, ErrInvalidUsername), errors.Is(err, ErrInvalidPassword), errors.Is(err, ErrInvalidToken), errors.Is(err, apierror.ErrUnauthorized):
+		c.JSON(401, gin.H{"error": "invalid credentials or revoked session"})
+	case errors.Is(err, apierror.ErrValidation), errors.Is(err, ErrInvalidName), errors.Is(err, ErrNameIsEmpty):
+		c.JSON(400, gin.H{"error": err.Error()})
+	case errors.Is(err, ErrNameAlreadyExists):
+		c.JSON(409, gin.H{"error": "username already exists"})
+	case errors.Is(err, gorm.ErrRecordNotFound):
+		c.JSON(404, gin.H{"error": "account not found"})
+	default:
+		log.Printf("account operation failed: %v", err)
+		c.JSON(500, gin.H{"error": "internal server error"})
+	}
 }

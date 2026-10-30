@@ -1,0 +1,7 @@
+.env
+backend/.env
+**/.run/
+**/.tmp-go-build/
+**/tmp/
+*.exe
+coverage.out
