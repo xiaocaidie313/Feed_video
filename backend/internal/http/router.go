@@ -22,6 +22,9 @@ import (
 )
 
 func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *gin.Engine {
+	return SetRouterWithContext(context.Background(), db, cache, rmq)
+}
+func SetRouterWithContext(ctx context.Context, db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *gin.Engine {
 	r := gin.New()
 	r.Use(gin.LoggerWithFormatter(func(p gin.LogFormatterParams) string {
 		return fmt.Sprintf("%s %s %d %s\n", p.Method, strings.SplitN(p.Path, "?", 2)[0], p.StatusCode, p.Latency)
@@ -102,12 +105,6 @@ func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *g
 	}
 
 	// like
-	likeMQ, err := rabbitmq.NewLikeMQ(rmq)
-	if err != nil {
-		log.Printf("LikeMQ init failed (mq disabled): %v", err)
-		likeMQ = nil
-	}
-	_ = likeMQ
 	likeRepository := video.NewLikeRepo(db)
 	likeService := video.NewLikeService(likeRepository, videoRepository, cache)
 	likeHandler := video.NewLikeHandler(likeService)
@@ -227,8 +224,8 @@ func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *g
 		log.Printf("timelineMQ init failed (mq disabled): %v", err)
 		timelineMQ = nil
 	}
-	worker.StartOutboxPoller(db, timelineMQ)
-	worker.StartConsumer(timelineMQ, "video.timeline.update.queue", cache, rmq)
+	worker.StartOutboxPoller(ctx, db, rmq)
+	worker.StartConsumer(ctx, timelineMQ, "video.timeline.update.queue", cache, rmq)
 
 	// SSE notification
 	if rmq != nil {
@@ -253,7 +250,7 @@ func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *g
 	go func() {
 		if rmq != nil {
 			hub := sseHub
-			ctx := context.Background()
+			// Use the API lifetime context for notification consumers.
 			for _, q := range []string{"notification.like", "notification.comment", "notification.social"} {
 				go func(queue string) {
 					for {

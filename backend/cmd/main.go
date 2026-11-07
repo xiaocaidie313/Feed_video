@@ -84,7 +84,7 @@ func run() error {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	server := &http.Server{Addr: ":" + strconv.Itoa(cfg.Server.Port), Handler: apphttp.SetRouter(sqlDB, cache, mq), ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{Addr: ":" + strconv.Itoa(cfg.Server.Port), Handler: apphttp.SetRouterWithContext(ctx, sqlDB, cache, mq), ReadHeaderTimeout: 5 * time.Second}
 	result := make(chan error, 1)
 	go func() { result <- server.ListenAndServe() }()
 	log.Printf("API listening on %s", server.Addr)

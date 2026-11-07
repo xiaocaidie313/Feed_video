@@ -13,7 +13,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"strconv"
+
 	"syscall"
 	"time"
 
@@ -58,7 +58,7 @@ func connectWithRetry(name string, maxRetries int, fn func() error) {
 // runWorkerWithRetry 为每个 Worker 创建独立 Channel，断开后自动重连
 // 预先设置 依赖的位置
 
-func runWorkerWithRetry(ctx context.Context, name string, conn *amqp.Connection, fn func(*amqp.Channel) error) {
+func runWorkerWithRetry(ctx context.Context, name string, base *mqrabbit.RabbitMQ, fn func(*amqp.Channel) error) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -66,7 +66,7 @@ func runWorkerWithRetry(ctx context.Context, name string, conn *amqp.Connection,
 		default:
 		}
 
-		ch, err := conn.Channel()
+		ch, err := base.NewChannel()
 		if err != nil {
 			log.Printf("%s: 创建 Channel 失败: %v, 5秒后重试", name, err)
 			time.Sleep(5 * time.Second)
@@ -150,17 +150,12 @@ func main() {
 		}
 	}
 	// 连接 RabbitMQ（带重试）
-	url := "amqp://" + cfg.RabbitMQ.Username + ":" + cfg.RabbitMQ.Password + "@" + cfg.RabbitMQ.Host + ":" + strconv.Itoa(cfg.RabbitMQ.Port) + "/"
-	var conn *amqp.Connection
-	connectWithRetry("RabbitMQ", 10, func() error {
-		var err error
-		conn, err = amqp.Dial(url)
-		return err
-	})
-	defer conn.Close()
+	var mq *mqrabbit.RabbitMQ
+	connectWithRetry("RabbitMQ", 10, func() error { var err error; mq, err = mqrabbit.NewRabbitMQ(&cfg.RabbitMQ); return err })
+	defer mq.Close()
 
 	// 用临时 Channel 声明拓扑（持久化队列，声明一次即可）
-	topoCh, err := conn.Channel()
+	topoCh, err := mq.NewChannel()
 	if err != nil {
 		log.Fatalf("Failed to open topology channel: %v", err)
 	}
@@ -202,17 +197,17 @@ func main() {
 	}
 
 	// 每个 Worker 独立 Channel + 自动重连
-	go runWorkerWithRetry(ctx, "SocialWorker", conn, func(ch *amqp.Channel) error {
+	go runWorkerWithRetry(ctx, "SocialWorker", mq, func(ch *amqp.Channel) error {
 		return worker.NewSocialWorker(ch, socialRepo, socialQueue).Run(ctx)
 	})
-	go runWorkerWithRetry(ctx, "LikeWorker", conn, func(ch *amqp.Channel) error {
-		return worker.NewLikeWorker(ch, likeRepo, videoRepo, likeQueue).Run(ctx)
+	go runWorkerWithRetry(ctx, "LikeWorker", mq, func(ch *amqp.Channel) error {
+		return worker.NewLikeWorker(ch, likeRepo, videoRepo, likeQueue, cache).Run(ctx)
 	})
-	go runWorkerWithRetry(ctx, "CommentWorker", conn, func(ch *amqp.Channel) error {
+	go runWorkerWithRetry(ctx, "CommentWorker", mq, func(ch *amqp.Channel) error {
 		return worker.NewCommentWorker(ch, commentRepo, videoRepo, commentQueue).Run(ctx)
 	})
 	if cache != nil {
-		go runWorkerWithRetry(ctx, "PopularityWorker", conn, func(ch *amqp.Channel) error {
+		go runWorkerWithRetry(ctx, "PopularityWorker", mq, func(ch *amqp.Channel) error {
 			return worker.NewPopularityWorker(ch, cache, popularityQueue).Run(ctx)
 		})
 	}
