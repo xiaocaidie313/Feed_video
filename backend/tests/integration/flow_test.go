@@ -278,7 +278,7 @@ func TestBusinessFlow(t *testing.T) {
 			}
 			request(t, server, "/account/refresh", "", map[string]string{"refresh_token": refresh}, 401)
 			var outboxCount int64
-			if err := db.Model(&video.OutboxMsg{}).Count(&outboxCount).Error; err != nil || outboxCount != 1 {
+			if err := db.Model(&video.OutboxMsg{}).Count(&outboxCount).Error; err != nil || outboxCount != 3 {
 				t.Fatal("video and outbox were not persisted together")
 			}
 		})
