@@ -4,7 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"feedvid/internal/apierror"
 	"feedvid/internal/midware/rabbitmq"
+	rediscache "feedvid/internal/midware/redis"
 	"feedvid/internal/video"
 	"log"
 	"time"
@@ -13,14 +15,19 @@ import (
 )
 
 type LikeWorker struct {
+	cache  *rediscache.Client
 	ch     *amqp.Channel
 	likes  *video.LikeRepo
 	videos *video.VideoRepo
 	queue  string
 }
 
-func NewLikeWorker(ch *amqp.Channel, likes *video.LikeRepo, videos *video.VideoRepo, queue string) *LikeWorker {
-	return &LikeWorker{ch: ch, likes: likes, videos: videos, queue: queue}
+func NewLikeWorker(ch *amqp.Channel, likes *video.LikeRepo, videos *video.VideoRepo, queue string, caches ...*rediscache.Client) *LikeWorker {
+	w := &LikeWorker{ch: ch, likes: likes, videos: videos, queue: queue}
+	if len(caches) > 0 {
+		w.cache = caches[0]
+	}
+	return w
 }
 
 func (w *LikeWorker) Run(ctx context.Context) error {
@@ -66,10 +73,10 @@ func (w *LikeWorker) handleDelivery(ctx context.Context, d amqp.Delivery) {
 			return
 		default:
 		}
-		if err := w.process(ctx, d.Body); err != nil {
+		if err := w.Process(ctx, d.Body); err != nil {
 			if i >= maxRetries {
-				log.Printf("like worker: 重试 %d 次后仍失败, 丢弃: %v", maxRetries, err)
-				_ = d.Ack(false)
+				log.Printf("like worker: 重试 %d 次后仍失败, 进入死信: %v", maxRetries, err)
+				_ = d.Nack(false, false)
 				return
 			}
 			wait := time.Duration(1<<uint(i)) * time.Second
@@ -82,72 +89,30 @@ func (w *LikeWorker) handleDelivery(ctx context.Context, d amqp.Delivery) {
 	}
 }
 
-func (w *LikeWorker) process(ctx context.Context, body []byte) error {
+func (w *LikeWorker) Process(ctx context.Context, body []byte) error {
 	var evt rabbitmq.LikeEvent
 	if err := json.Unmarshal(body, &evt); err != nil {
-		// 解析事件失败，直接丢弃
-		return nil
-	}
-	if evt.UserID == 0 || evt.VideoID == 0 {
-		return nil
-	}
-
-	switch evt.Action {
-	case "like":
-		return w.applyLike(ctx, evt.UserID, evt.VideoID)
-	case "unlike":
-		return w.applyUnlike(ctx, evt.UserID, evt.VideoID)
-	default:
-		return nil
-	}
-}
-
-func (w *LikeWorker) applyLike(ctx context.Context, userID, videoID uint) error {
-	ok, err := w.videos.IsExist(ctx, videoID)
-	if err != nil {
 		return err
 	}
-	if !ok {
+	if evt.EventID == "" || evt.UserID == 0 || evt.VideoID == 0 {
+		return errors.New("invalid like event")
+	}
+	if evt.Action != "like" && evt.Action != "unlike" {
+		return errors.New("invalid like action")
+	}
+	if !evt.Committed {
+		_, err := w.likes.ChangeLike(ctx, evt.VideoID, evt.UserID, evt.Action == "like", evt.EventID)
+		if errors.Is(err, apierror.ErrNotFound) {
+			return nil
+		}
+		return err
+	}
+	if w.cache == nil {
 		return nil
 	}
-
-	created, err := w.likes.LikeIgnoreDuplicate(ctx, &video.Like{
-		VideoID:   videoID,
-		AccountID: userID,
-		CreatedAt: time.Now(),
-	})
-	if err != nil {
-		return err
+	delta := int64(1)
+	if evt.Action == "unlike" {
+		delta = -1
 	}
-	if !created {
-		return nil
-	}
-
-	if err := w.videos.ChangeLikesCount(ctx, videoID, 1); err != nil {
-		return err
-	}
-	return w.videos.ChangePopularity(ctx, videoID, 1)
-}
-
-func (w *LikeWorker) applyUnlike(ctx context.Context, userID, videoID uint) error {
-	ok, err := w.videos.IsExist(ctx, videoID)
-	if err != nil {
-		return err
-	}
-	if !ok {
-		return nil
-	}
-	// 删除like 表记录
-	deleted, err := w.likes.DeleteByVideoAndAccount(ctx, videoID, userID)
-	if err != nil {
-		return err
-	}
-	if !deleted {
-		return nil
-	}
-
-	if err := w.videos.ChangeLikesCount(ctx, videoID, -1); err != nil {
-		return err
-	}
-	return w.videos.ChangePopularity(ctx, videoID, -1)
+	return w.cache.ApplyPopularityEvent(ctx, evt.EventID, evt.VideoID, delta, evt.OccurredAt)
 }

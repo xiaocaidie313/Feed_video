@@ -22,6 +22,7 @@ const (
 )
 
 type LikeEvent struct {
+	Committed  bool      `json:"committed,omitempty"`
 	EventID    string    `json:"event_id"`
 	Action     string    `json:"action"`
 	UserID     uint      `json:"user_id"`

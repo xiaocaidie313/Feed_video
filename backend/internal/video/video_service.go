@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"feedvid/internal/apierror"
+	"feedvid/internal/midware/rabbitmq"
 	rediscache "feedvid/internal/midware/redis"
 	"fmt"
+	"github.com/google/uuid"
 	"log"
 	"strings"
 	"time"
@@ -48,12 +50,13 @@ func (vs *VideoService) Publish(ctx context.Context, video *Video) error {
 			return err
 		}
 
-		msg := OutboxMsg{
-			VideoID:    video.ID,
-			EventType:  "video_published",
-			Status:     "pending",
-			CreateTime: video.CreateTime,
+		event := rabbitmq.TimelineEvent{EventID: uuid.NewString(), VideoID: video.ID, CreateTime: video.CreateTime.UnixMilli(), OccurredAt: time.Now().UTC()}
+		payload, err := json.Marshal(event)
+		if err != nil {
+			return err
 		}
+		msg := OutboxMsg{EventID: event.EventID, VideoID: video.ID, EventType: "video_published", Status: "pending", CreateTime: video.CreateTime,
+			Exchange: "video.timeline.events", RoutingKey: "video.timeline.publish", Payload: payload}
 
 		if err := tx.Create(&msg).Error; err != nil {
 			return err
@@ -128,7 +131,9 @@ func (vs *VideoService) GetDetail(ctx context.Context, id uint) (*Video, error) 
 		lockcancel()
 		if lockerr == nil && locked {
 			defer func() {
-				if unlockerr := vs.cache.Unlock(context.Background(), cacheKey, token); unlockerr != nil {
+				unlockCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+				defer cancel()
+				if unlockerr := vs.cache.Unlock(unlockCtx, lockKey, token); unlockerr != nil {
 					log.Println("unlock error:", unlockerr)
 				}
 			}()
@@ -144,7 +149,7 @@ func (vs *VideoService) GetDetail(ctx context.Context, id uint) (*Video, error) 
 			}
 			setCacheErr := vs.setCachedVideo(ctx, cacheKey, video)
 			if setCacheErr != nil {
-				return nil, setCacheErr
+				log.Printf("cache write failed: %v", setCacheErr)
 			}
 			return video, nil
 		}

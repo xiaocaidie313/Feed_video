@@ -2,11 +2,9 @@ package video
 
 import (
 	"context"
-	"errors"
-
-	"github.com/go-sql-driver/mysql"
-
+	"feedvid/internal/apierror"
 	rediscache "feedvid/internal/midware/redis"
+	"time"
 )
 
 type LikeService struct {
@@ -15,93 +13,33 @@ type LikeService struct {
 	cache     *rediscache.Client
 }
 
-// @TODO: like 部分增加redis   like点赞感觉也是高并发的部分
 func NewLikeService(repo *LikeRepo, videoRepo *VideoRepo, cache *rediscache.Client) *LikeService {
 	return &LikeService{repo: repo, VideoRepo: videoRepo, cache: cache}
 }
-
-// 判断是否是重复键错误
-func isDupKey(err error) bool {
-	var me *mysql.MySQLError
-	return errors.As(err, &me) && me.Number == 1062
-}
-
-func (s *LikeService) Like(ctx context.Context, like *Like) error {
+func (s *LikeService) change(ctx context.Context, like *Like, wanted bool) error {
 	if like == nil {
-		return errors.New("like is nil")
+		return apierror.ErrValidation
 	}
-	if like.VideoID == 0 || like.AccountID == 0 {
-		return errors.New("video_id and account_id are required")
-	}
-
-	if s.VideoRepo != nil {
-		ok, err := s.VideoRepo.IsExist(ctx, like.VideoID)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return errors.New("video not found")
-		}
-	}
-
-	isLiked, err := s.repo.IsLiked(ctx, like.VideoID, like.AccountID)
+	changed, err := s.repo.ChangeLike(ctx, like.VideoID, like.AccountID, wanted, "")
 	if err != nil {
 		return err
 	}
-	if isLiked {
-		return errors.New("user has liked this video")
-	}
-
-	if err := s.repo.Like(ctx, like); err != nil {
-		return err
-	}
-	// Fallback: direct Redis update when popularity MQ publish fails.
-	if s.cache != nil {
-		UpdatePopularityCache(ctx, s.cache, like.VideoID, 1)
+	if changed && s.cache != nil {
+		// Best effort immediate invalidation; the durable event repeats it later.
+		cacheCtx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+		defer cancel()
+		_ = s.cache.Del(cacheCtx, s.cache.Key("video:detail:id=%d", like.VideoID))
+		_ = s.cache.Del(cacheCtx, s.cache.Key("video:entity:%d", like.VideoID))
 	}
 	return nil
 }
-
+func (s *LikeService) Like(ctx context.Context, like *Like) error { return s.change(ctx, like, true) }
 func (s *LikeService) Unlike(ctx context.Context, like *Like) error {
-	if like == nil {
-		return errors.New("like is nil")
-	}
-	if like.VideoID == 0 || like.AccountID == 0 {
-		return errors.New("video_id and account_id are required")
-	}
-
-	if s.VideoRepo != nil {
-		ok, err := s.VideoRepo.IsExist(ctx, like.VideoID)
-		if err != nil {
-			return err
-		}
-		if !ok {
-			return errors.New("video not found")
-		}
-	}
-
-	isLiked, err := s.repo.IsLiked(ctx, like.VideoID, like.AccountID)
-	if err != nil {
-		return err
-	}
-	if !isLiked {
-		return errors.New("user has not liked this video")
-	}
-
-	if err := s.repo.Unlike(ctx, like); err != nil {
-		return err
-	}
-	// Fallback: direct Redis update when popularity MQ publish fails.
-	if s.cache != nil {
-		UpdatePopularityCache(ctx, s.cache, like.VideoID, -1)
-	}
-	return nil
+	return s.change(ctx, like, false)
 }
-
 func (s *LikeService) IsLiked(ctx context.Context, videoID, accountID uint) (bool, error) {
 	return s.repo.IsLiked(ctx, videoID, accountID)
 }
-
 func (s *LikeService) ListLikedVideos(ctx context.Context, accountID uint) ([]Video, error) {
 	return s.repo.ListLikedVideos(ctx, accountID)
 }

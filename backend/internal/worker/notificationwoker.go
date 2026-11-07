@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"feedvid/internal/eventstore"
 	"feedvid/internal/midware/rabbitmq"
 	"log"
 	"time"
@@ -75,10 +76,10 @@ func (w *NotificationWorker) handleDelivery(ctx context.Context, d amqp.Delivery
 			return
 		default:
 		}
-		if err := w.process(ctx, d); err != nil {
+		if err := w.Process(ctx, d); err != nil {
 			if i >= maxRetries {
-				log.Printf("notification worker: 重试 %d 次后仍失败, 丢弃: %v", maxRetries, err)
-				_ = d.Ack(false)
+				log.Printf("notification worker: 重试 %d 次后仍失败, 进入死信: %v", maxRetries, err)
+				_ = d.Nack(false, false)
 				return
 			}
 			wait := time.Duration(1<<uint(i)) * time.Second
@@ -91,7 +92,7 @@ func (w *NotificationWorker) handleDelivery(ctx context.Context, d amqp.Delivery
 	}
 }
 
-func (w *NotificationWorker) process(ctx context.Context, d amqp.Delivery) error {
+func (w *NotificationWorker) Process(ctx context.Context, d amqp.Delivery) error {
 	body := d.Body
 	if len(body) == 0 {
 		return nil
@@ -99,6 +100,7 @@ func (w *NotificationWorker) process(ctx context.Context, d amqp.Delivery) error
 	routingKey := d.RoutingKey
 
 	var notif *Notification
+	eventID := ""
 
 	//  通知用户的动作: 点赞 评论 关注
 	switch {
@@ -107,6 +109,7 @@ func (w *NotificationWorker) process(ctx context.Context, d amqp.Delivery) error
 		if err := json.Unmarshal(body, &evt); err != nil {
 			return nil
 		}
+		eventID = evt.EventID
 		if evt.UserID == 0 || evt.VideoID == 0 {
 			return nil
 		}
@@ -127,6 +130,7 @@ func (w *NotificationWorker) process(ctx context.Context, d amqp.Delivery) error
 		if err := json.Unmarshal(body, &evt); err != nil {
 			return nil
 		}
+		eventID = evt.EventID
 		if evt.AuthorID == 0 || evt.VideoID == 0 {
 			return nil
 		}
@@ -147,6 +151,7 @@ func (w *NotificationWorker) process(ctx context.Context, d amqp.Delivery) error
 		if err := json.Unmarshal(body, &evt); err != nil {
 			return nil
 		}
+		eventID = evt.EventID
 		if evt.FollowerID == 0 || evt.VloggerID == 0 {
 			return nil
 		}
@@ -156,11 +161,16 @@ func (w *NotificationWorker) process(ctx context.Context, d amqp.Delivery) error
 	if notif == nil {
 		return nil
 	}
-	if err := w.db.WithContext(ctx).Create(notif).Error; err != nil {
+	created := false
+	if err := w.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var err error
+		created, err = eventstore.Once(tx, "notification:"+routingKey, eventID, func(tx *gorm.DB) error { return tx.Create(notif).Error })
+		return err
+	}); err != nil {
 		return err
 	}
 	// 发出去 信息通知
-	if w.hub != nil {
+	if created && w.hub != nil {
 		// push接口
 		w.hub.Push(notif.RecipientID, notif)
 	}
