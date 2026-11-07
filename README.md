@@ -96,3 +96,37 @@ HTTP 流程使用 MQ 不可用的降级模式；另一个测试通过真实 Rabb
 这不代表已有异步 Worker 的重试、去重、点赞计数一致性已完成验收。
 
 GitHub Actions 分别运行单元检查和带真实依赖服务的集成测试。
+
+## 点赞与事件一致性
+
+点赞和取消点赞现在是幂等操作：重复请求返回成功，只有实际状态变化才修改计数。
+点赞记录、视频点赞数/热度以及 Outbox 事件在一个 MySQL 事务中提交。
+API 中的 Outbox 任务使用固定事件 ID、消息持久化、mandatory 返回检查及 Publisher Confirm。
+投递失败会保留记录并按退避时间重试；确认丢失造成的重投由消费者去重处理。
+点赞消费者不重复修改已经提交的计数，通知收件记录与通知写入同一事务。
+缓存热度使用事件发生时间分桶，并在 Redis Lua 中完成去重与更新。
+重试耗尽的点赞/通知消息进入死信队列，需排查后按原事件 ID 重放。
+
+启动 API 时会添加 Outbox 扩展列、eventstore 收件记录表以及最新视频复合索引。
+旧的 pending 视频发布记录可以继续投递，兼容迁移前没有事件 ID/payload 的记录。
+正式部署应先审核迁移，按一次部署同时升级 API 和 Worker，避免新旧消费者混跑。
+
+若旧版本已经造成点赞数与 likes 表不一致，在 backend 中运行：
+go run ./cmd/reconcile-likes
+该命令使用当前配置，逐个锁定视频并根据 likes 表修正 likes_count。
+它不会生成点赞事件或通知，也不会重新计算混合了评论等因素的 popularity。
+
+## Feed 游标
+
+/feed/listLatest 和 /feed/listByFollowing 按 create_time DESC, id DESC 排序。
+请求的 latest_time 使用毫秒，并将上一页 next_id_before 原样作为 id_before 一起传回。
+响应包含 next_time、next_id_before、has_more；has_more 使用多查一条确定。
+只传时间的旧请求仍可使用，但完整保留相同时间记录需要传复合游标。
+关注列表兼容旧客户端在不传 ID 时使用的秒时间戳。
+
+最新和关注列表由 MySQL 的索引查询确定 ID 顺序，实体继续使用本地/Redis 缓存及批量回源。
+点赞数批量读取当前数据库值，避免实体缓存使计数冻结。
+此前的全局 Redis 时间线仍由事件消费者维护，当前最新列表不依赖该投影是否已追上。
+
+新增回归测试包含并发重复点赞、事务失败回滚、旧计数对账、Outbox 重试身份、
+真实 broker 重投、不可路由检测、连接重建、旧表迁移、缓存锁释放和相同时间分页。
