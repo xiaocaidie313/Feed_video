@@ -19,11 +19,15 @@ func NewFeedHandler(service *FeedService) *FeedHandler {
 func (f *FeedHandler) ListLatest(c *gin.Context) {
 	var req ListLatestRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(apierror.MathErrorsToStatus(err), gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
 	if req.Limit <= 0 || req.Limit > 50 {
 		req.Limit = 10
+	}
+	if req.IDBefore != nil && (*req.IDBefore == 0 || req.LatestTime <= 0) {
+		c.JSON(400, gin.H{"error": "id_before requires a positive latest_time and ID"})
+		return
 	}
 	var latestTime time.Time
 	if req.LatestTime > 0 {
@@ -33,7 +37,7 @@ func (f *FeedHandler) ListLatest(c *gin.Context) {
 	if err != nil {
 		viewerAccountID = 0
 	}
-	feedItems, err := f.service.ListLatest(c.Request.Context(), req.Limit, latestTime, viewerAccountID)
+	feedItems, err := f.service.ListLatest(c.Request.Context(), req.Limit, latestTime, viewerAccountID, cursorID(req.IDBefore))
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -45,7 +49,7 @@ func (f *FeedHandler) ListLatest(c *gin.Context) {
 func (f *FeedHandler) ListLikesCount(c *gin.Context) {
 	var req ListLikesCountRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(apierror.MathErrorsToStatus(err), gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
 	if req.Limit <= 0 || req.Limit > 50 {
@@ -94,7 +98,7 @@ func (f *FeedHandler) ListLikesCount(c *gin.Context) {
 func (f *FeedHandler) ListByFollowing(c *gin.Context) {
 	var req ListByFollowingRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(apierror.MathErrorsToStatus(err), gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
 	if req.Limit <= 0 || req.Limit > 50 {
@@ -104,11 +108,19 @@ func (f *FeedHandler) ListByFollowing(c *gin.Context) {
 	if err != nil {
 		viewerAccountID = 0
 	}
+	if req.IDBefore != nil && (*req.IDBefore == 0 || req.LatestTime <= 0) {
+		c.JSON(400, gin.H{"error": "id_before requires a positive latest_time and ID"})
+		return
+	}
 	var latestTime time.Time
 	if req.LatestTime > 0 {
-		latestTime = time.Unix(req.LatestTime, 0)
+		if req.IDBefore == nil && req.LatestTime < 100000000000 {
+			latestTime = time.Unix(req.LatestTime, 0)
+		} else {
+			latestTime = time.UnixMilli(req.LatestTime)
+		}
 	}
-	feedItems, err := f.service.ListByFollowing(c.Request.Context(), req.Limit, latestTime, viewerAccountID)
+	feedItems, err := f.service.ListByFollowing(c.Request.Context(), req.Limit, latestTime, viewerAccountID, cursorID(req.IDBefore))
 	if err != nil {
 		c.JSON(500, gin.H{"error": err.Error()})
 		return
@@ -120,7 +132,7 @@ func (f *FeedHandler) ListByFollowing(c *gin.Context) {
 func (f *FeedHandler) ListByPopularity(c *gin.Context) {
 	var req ListByPopularityRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(apierror.MathErrorsToStatus(err), gin.H{"error": err.Error()})
+		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
 	if req.Limit <= 0 || req.Limit > 50 {
@@ -198,4 +210,11 @@ func (h *FeedHandler) ListByTag(c *gin.Context) {
 		return
 	}
 	c.JSON(200, gin.H{"video_list": nonNilFeedVideoItems(items)})
+}
+
+func cursorID(id *uint) uint {
+	if id == nil {
+		return 0
+	}
+	return *id
 }

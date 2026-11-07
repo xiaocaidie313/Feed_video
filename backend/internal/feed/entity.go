@@ -22,12 +22,14 @@ type FeedVideoItem struct {
 type ListLatestRequest struct {
 	Limit      int   `json:"limit"`
 	LatestTime int64 `json:"latest_time"`
+	IDBefore   *uint `json:"id_before,omitempty"`
 }
 
 type ListLatestResponse struct {
-	VideoList []FeedVideoItem `json:"video_list"`
-	NextTime  int64           `json:"next_time"`
-	HasMore   bool            `json:"has_more"`
+	VideoList    []FeedVideoItem `json:"video_list"`
+	NextTime     int64           `json:"next_time"`
+	NextIDBefore *uint           `json:"next_id_before,omitempty"`
+	HasMore      bool            `json:"has_more"`
 }
 
 type ListLikesCountRequest struct {
@@ -51,12 +53,14 @@ type ListLikesCountResponse struct {
 type ListByFollowingRequest struct {
 	Limit      int   `json:"limit"`
 	LatestTime int64 `json:"latest_time"`
+	IDBefore   *uint `json:"id_before,omitempty"`
 }
 
 type ListByFollowingResponse struct {
-	VideoList []FeedVideoItem `json:"video_list"`
-	NextTime  int64           `json:"next_time"`
-	HasMore   bool            `json:"has_more"`
+	VideoList    []FeedVideoItem `json:"video_list"`
+	NextTime     int64           `json:"next_time"`
+	NextIDBefore *uint           `json:"next_id_before,omitempty"`
+	HasMore      bool            `json:"has_more"`
 }
 
 type ListByPopularityRequest struct {

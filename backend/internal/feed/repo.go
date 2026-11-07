@@ -17,12 +17,16 @@ func NewFeedRepository(db *gorm.DB) *FeedRepository {
 	return &FeedRepository{db: db}
 }
 
-func (repo *FeedRepository) ListLatest(ctx context.Context, limit int, latestBefore time.Time) ([]*video.Video, error) {
+func (repo *FeedRepository) ListLatest(ctx context.Context, limit int, latestBefore time.Time, idBefore ...uint) ([]*video.Video, error) {
 	var videos []*video.Video
 	query := repo.db.WithContext(ctx).Model(&video.Video{}).
-		Order("create_time DESC")
+		Select("id", "create_time").Order("create_time DESC, id DESC")
 	if !latestBefore.IsZero() {
-		query = query.Where("create_time < ?", latestBefore)
+		if len(idBefore) > 0 && idBefore[0] > 0 {
+			query = query.Where("create_time < ? OR (create_time = ? AND id < ?)", latestBefore, latestBefore, idBefore[0])
+		} else {
+			query = query.Where("create_time < ?", latestBefore)
+		}
 	}
 	if err := query.Limit(limit).Find(&videos).Error; err != nil {
 		return nil, err
@@ -49,10 +53,10 @@ func (repo *FeedRepository) ListLikesCountWithCursor(ctx context.Context, limit 
 	return videos, nil
 }
 
-func (repo *FeedRepository) ListByFollowing(ctx context.Context, limit int, viewerAccountID uint, latestBefore time.Time) ([]*video.Video, error) {
+func (repo *FeedRepository) ListByFollowing(ctx context.Context, limit int, viewerAccountID uint, latestBefore time.Time, idBefore ...uint) ([]*video.Video, error) {
 	var videos []*video.Video
 	query := repo.db.WithContext(ctx).Model(&video.Video{}).
-		Order("create_time DESC")
+		Select("id", "create_time").Order("create_time DESC, id DESC")
 	if viewerAccountID > 0 {
 		followingSubQuery := repo.db.WithContext(ctx).
 			Model(&social.Social{}).
@@ -61,7 +65,11 @@ func (repo *FeedRepository) ListByFollowing(ctx context.Context, limit int, view
 		query = query.Where("author_id IN (?)", followingSubQuery)
 	}
 	if !latestBefore.IsZero() {
-		query = query.Where("create_time < ?", latestBefore)
+		if len(idBefore) > 0 && idBefore[0] > 0 {
+			query = query.Where("create_time < ? OR (create_time = ? AND id < ?)", latestBefore, latestBefore, idBefore[0])
+		} else {
+			query = query.Where("create_time < ?", latestBefore)
+		}
 	}
 	if err := query.Limit(limit).Find(&videos).Error; err != nil {
 		return nil, err
@@ -112,4 +120,20 @@ func (repo *FeedRepository) ListByTag(ctx context.Context, tagName string, limit
 		Limit(limit).
 		Find(&videos).Error
 	return videos, err
+}
+
+func (repo *FeedRepository) GetLikeCounts(ctx context.Context, ids []uint) (map[uint]int64, error) {
+	result := map[uint]int64{}
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var rows []struct {
+		ID         uint
+		LikesCount int64
+	}
+	err := repo.db.WithContext(ctx).Model(&video.Video{}).Select("id", "likes_count").Where("id IN ?", ids).Scan(&rows).Error
+	for _, row := range rows {
+		result[row.ID] = row.LikesCount
+	}
+	return result, err
 }
