@@ -9,6 +9,7 @@ import (
 	"feedvid/internal/config"
 	"log"
 	"strconv"
+	"sync"
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
@@ -16,7 +17,10 @@ import (
 
 // RabbitMQ 只管理 Connection，Channel 由各组件按需创建
 type RabbitMQ struct {
-	Conn *amqp.Connection
+	Conn   *amqp.Connection
+	mu     sync.Mutex
+	url    string
+	closed bool
 }
 
 // 构建 基础能力 基础连接
@@ -30,22 +34,40 @@ func NewRabbitMQ(cfg *config.RabbitMQConfig) (*RabbitMQ, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &RabbitMQ{Conn: conn}, nil
+	return &RabbitMQ{Conn: conn, url: url}, nil
 }
 
 func (r *RabbitMQ) Close() error {
 	if r == nil {
 		return nil
 	}
-	if r.Conn != nil {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.closed = true
+	if r.Conn != nil && !r.Conn.IsClosed() {
 		return r.Conn.Close()
 	}
 	return nil
 }
 
 func (r *RabbitMQ) NewChannel() (*amqp.Channel, error) {
-	if r == nil || r.Conn == nil {
-		return nil, errors.New("rabbitmq connection is not initialized")
+	if r == nil {
+		return nil, errors.New("rabbitmq is not initialized")
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.closed {
+		return nil, errors.New("rabbitmq is closed")
+	}
+	if r.Conn == nil || r.Conn.IsClosed() {
+		if r.url == "" {
+			return nil, errors.New("rabbitmq has no reconnect configuration")
+		}
+		conn, err := amqp.DialConfig(r.url, amqp.Config{Heartbeat: 10 * time.Second, Dial: amqp.DefaultDial(3 * time.Second)})
+		if err != nil {
+			return nil, err
+		}
+		r.Conn = conn
 	}
 	return r.Conn.Channel()
 }

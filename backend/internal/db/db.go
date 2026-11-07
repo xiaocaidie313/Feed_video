@@ -2,6 +2,7 @@ package db
 
 import (
 	"feedvid/internal/account"
+	"feedvid/internal/eventstore"
 	"feedvid/internal/message"
 	"feedvid/internal/social"
 	"feedvid/internal/video"
@@ -48,7 +49,7 @@ func AutoMigrate(db *gorm.DB) error {
 	return db.AutoMigrate(
 		&account.Account{}, &video.Video{}, &video.Like{}, &video.Comment{},
 		&social.Social{}, &video.OutboxMsg{}, &video.Tag{}, &video.VideoTag{},
-		&message.Message{}, &worker.Notification{},
+		&message.Message{}, &worker.Notification{}, &eventstore.Receipt{},
 	)
 }
 

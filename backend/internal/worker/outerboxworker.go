@@ -5,49 +5,16 @@ import (
 	"encoding/json"
 	"feedvid/internal/midware/rabbitmq"
 	rediscache "feedvid/internal/midware/redis"
-	"feedvid/internal/video"
+
 	"fmt"
 	"log"
 	"time"
 
 	oredis "github.com/redis/go-redis/v9"
-	"gorm.io/gorm"
 )
 
-func StartOutboxPoller(db *gorm.DB, tmq *rabbitmq.TimelineMQ) {
-	if db == nil || tmq == nil {
-		log.Printf("Outbox poller disabled: timeline mq is not initialized")
-		return
-	}
-
-	go func() {
-		for {
-			var messages []video.OutboxMsg
-
-			err := db.Where("status = ?", "pending").Order("create_time ASC").Limit(100).Find(&messages).Error
-
-			if err != nil || len(messages) == 0 {
-				time.Sleep(1 * time.Second)
-				continue
-			}
-
-			for _, msg := range messages {
-				err := tmq.PublishVideo(context.Background(), msg.VideoID, msg.CreateTime)
-
-				if err == nil {
-					if err := db.Delete(&msg).Error; err != nil {
-						log.Printf("删除 outbox 消息失败: id=%d, err=%v", msg.ID, err)
-					}
-				} else {
-					log.Printf("投递MQ失败: VideoID: %d, err: %v", msg.VideoID, err)
-				}
-			}
-		}
-	}()
-}
-
-func StartConsumer(tmq *rabbitmq.TimelineMQ, queueName string, redisClient *rediscache.Client, rmq *rabbitmq.RabbitMQ) {
-	if tmq == nil || rmq == nil || rmq.Conn == nil {
+func StartConsumer(lifetime context.Context, tmq *rabbitmq.TimelineMQ, queueName string, redisClient *rediscache.Client, rmq *rabbitmq.RabbitMQ) {
+	if tmq == nil || rmq == nil {
 		log.Printf("Timeline consumer disabled: rabbitmq is not initialized")
 		return
 	}
@@ -58,6 +25,11 @@ func StartConsumer(tmq *rabbitmq.TimelineMQ, queueName string, redisClient *redi
 
 	go func() {
 		for {
+			select {
+			case <-lifetime.Done():
+				return
+			default:
+			}
 			// 每次重连创建独立的 Channel，不与发布者共用
 			ch, err := rmq.NewChannel()
 			if err != nil {
