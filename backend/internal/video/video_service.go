@@ -6,6 +6,7 @@ import (
 	"errors"
 	"feedvid/internal/apierror"
 	rediscache "feedvid/internal/midware/redis"
+	"fmt"
 	"log"
 	"strings"
 	"time"
@@ -25,20 +26,20 @@ func NewVideoService(repo *VideoRepo, cache *rediscache.Client) *VideoService {
 
 func (vs *VideoService) Publish(ctx context.Context, video *Video) error {
 	if video == nil {
-		return errors.New("video is nil")
+		return fmt.Errorf("video is nil: %w", apierror.ErrValidation)
 	}
 	video.Title = strings.TrimSpace(video.Title)
 	video.PlayURL = strings.TrimSpace(video.PlayURL)
 	video.CoverURL = strings.TrimSpace(video.CoverURL)
 
 	if video.Title == "" {
-		return errors.New("title is required")
+		return fmt.Errorf("title is required: %w", apierror.ErrValidation)
 	}
 	if video.PlayURL == "" {
-		return errors.New("play url is required")
+		return fmt.Errorf("play url is required: %w", apierror.ErrValidation)
 	}
 	if video.CoverURL == "" {
-		return errors.New("cover url is required")
+		return fmt.Errorf("cover url is required: %w", apierror.ErrValidation)
 	}
 
 	//事务保证视频写入库和消息写入本地消息表的一致性
@@ -201,7 +202,7 @@ func (vs *VideoService) setCachedVideo(ctx context.Context, cacheKey string, vid
 		return errors.New("redis client not initialized or cache key is empty")
 	}
 	if video == nil {
-		return errors.New("video is nil")
+		return fmt.Errorf("video is nil: %w", apierror.ErrValidation)
 	}
 
 	marshaledVideo, err := json.Marshal(video)

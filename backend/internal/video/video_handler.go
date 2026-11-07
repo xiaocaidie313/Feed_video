@@ -30,7 +30,8 @@ func NewVideoHandler(service *VideoService, accountService *account.AccountServi
 func (vh *VideoHandler) PublishVideo(c *gin.Context) {
 	var req PublishVideoRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(apierror.MathErrorsToStatus(err), gin.H{"error": err.Error()})
+		// 请求参数有问题
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 

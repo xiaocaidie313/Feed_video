@@ -1,0 +1,62 @@
+name: Backend checks
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - run: test -z "$(gofmt -l cmd internal tests)"
+      - run: go vet ./...
+      - run: go test -race ./...
+      - run: go build ./...
+  integration:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root_dev
+          MYSQL_ROOT_HOST: "%"
+        ports: ["3306:3306"]
+        options: >-
+          --health-cmd="mysqladmin ping -h127.0.0.1 -uroot -proot_dev"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+      redis:
+        image: redis:8.2-alpine
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=5s --health-timeout=3s --health-retries=20
+      rabbitmq:
+        image: rabbitmq:4.2-management
+        env:
+          RABBITMQ_DEFAULT_USER: feedvid
+          RABBITMQ_DEFAULT_PASS: mq_dev
+        ports: ["5672:5672"]
+        options: >-
+          --health-cmd="rabbitmq-diagnostics -q check_running"
+          --health-interval=5s --health-timeout=5s --health-retries=30
+    env:
+      INTEGRATION_MYSQL_DSN: root:root_dev@tcp(127.0.0.1:3306)/?parseTime=true
+      INTEGRATION_REDIS_ADDR: 127.0.0.1:6379
+      INTEGRATION_AMQP_URL: amqp://feedvid:mq_dev@127.0.0.1:5672/
+      JWT_SECRET: ci-only-development-secret-for-isolated-tests
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+      - run: go test -race -tags integration ./tests/integration -count=1

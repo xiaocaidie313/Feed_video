@@ -12,7 +12,9 @@ import (
 	"feedvid/internal/social"
 	"feedvid/internal/video"
 	"feedvid/internal/worker"
+	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -20,12 +22,25 @@ import (
 )
 
 func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *gin.Engine {
-	r := gin.Default()
+	r := gin.New()
+	r.Use(gin.LoggerWithFormatter(func(p gin.LogFormatterParams) string {
+		return fmt.Sprintf("%s %s %d %s\n", p.Method, strings.SplitN(p.Path, "?", 2)[0], p.StatusCode, p.Latency)
+	}), gin.Recovery())
 	if err := r.SetTrustedProxies(nil); err != nil {
 		log.Printf("SetTrustedProxies failed: %v", err)
 	}
 	r.GET("/healthz", func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
+	})
+	r.GET("/readyz", func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(c.Request.Context(), 500*time.Millisecond)
+		defer cancel()
+		sqlDB, err := db.DB()
+		if err != nil || sqlDB.PingContext(ctx) != nil {
+			c.JSON(503, gin.H{"status": "unavailable"})
+			return
+		}
+		c.JSON(200, gin.H{"status": "ready"})
 	})
 	r.Static("/static", "./.run/uploads")
 
@@ -43,7 +58,7 @@ func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *g
 	{
 		accountGroup.POST("/register", registerLimiter, accountHandler.CreateAccount)
 		accountGroup.POST("/login", loginLimiter, accountHandler.Login)
-		accountGroup.POST("/changePassword", accountHandler.ChangePassword)
+
 		accountGroup.POST("/findByID", accountHandler.FindByID)
 		accountGroup.POST("/findByUsername", accountHandler.FindByUsername)
 		accountGroup.POST("/refresh", accountHandler.Refresh)
@@ -52,6 +67,7 @@ func SetRouter(db *gorm.DB, cache *rediscache.Client, rmq *rabbitmq.RabbitMQ) *g
 	protectedAccountGroup.Use(jwt.JWTAuth(accountRepository, cache))
 	{
 		protectedAccountGroup.POST("/logout", accountHandler.Logout)
+		protectedAccountGroup.POST("/changePassword", accountHandler.ChangePassword)
 		protectedAccountGroup.POST("/rename", accountHandler.Rename)
 		protectedAccountGroup.POST("/uploadAvatar", accountHandler.UploadAvatar)
 		protectedAccountGroup.POST("/updateProfile", accountHandler.UpdateProfile)

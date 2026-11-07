@@ -9,7 +9,8 @@ import (
 	"sync"
 	"time"
 
-	"feedvid/internal/auth"
+	"feedvid/internal/account"
+	appjwt "feedvid/internal/midware/jwt"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -77,24 +78,7 @@ func sseAccountID(c *gin.Context) (uint, bool) {
 }
 
 func (h *SSEHub) SSERequireAuth() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		/// 获取原本token
-		token := c.Query("token")
-		if token == " " {
-			tokenHeader := c.GetHeader("Authorization")
-			if len(tokenHeader) > 7 && tokenHeader[:7] == "Bearer" {
-				token = tokenHeader[7:]
-			}
-		}
-
-		cliams, err := auth.ParseToken(token)
-		if err != nil {
-			c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid token"})
-			return
-		}
-		c.Set("accountID", cliams.AccountID)
-		c.Next()
-	}
+	return appjwt.SSEAuth(account.NewAccountRepo(h.db), nil)
 }
 
 func (h *SSEHub) SSEHandler(c *gin.Context) {

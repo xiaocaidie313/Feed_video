@@ -21,10 +21,10 @@ const (
 )
 
 type PopularityEvent struct {
-	EventID    string    `json: "event_id"`
-	VideoID    uint      `json: "video_id"`
-	Change     int64     `json: "change"`
-	OccurredAt time.Time `json: "occurred_at"`
+	EventID    string    `json:"event_id"`
+	VideoID    uint      `json:"video_id"`
+	Change     int64     `json:"change"`
+	OccurredAt time.Time `json:"occurred_at"`
 }
 
 func NewPopularityMQ(base *RabbitMQ) (*PopularityMQ, error) {

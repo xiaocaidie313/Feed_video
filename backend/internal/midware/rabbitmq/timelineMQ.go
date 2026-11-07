@@ -41,7 +41,6 @@ func NewTimelineMQ(base *RabbitMQ) (*TimelineMQ, error) {
 	return &TimelineMQ{ch: ch}, nil
 }
 
-
 func (t *TimelineMQ) PublishVideo(ctx context.Context, videoID uint, createTime time.Time) error {
 	if t == nil || t.ch == nil {
 		return errors.New("timeline mq is not initialized")

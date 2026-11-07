@@ -31,7 +31,7 @@ func Limit(
 			c.Next()
 			return
 		}
-		key := buildKey(keyPrefix, subject)
+		key := cache.Key("%s", buildKey(keyPrefix, subject))
 		count, err := cache.IncrementWithExpire(c.Request.Context(), key, window)
 		if err != nil {
 			c.Next()

@@ -16,10 +16,10 @@ type Video struct {
 }
 
 type PublishVideoRequest struct {
-	Title       string
-	Description string
-	PlayURL     string
-	CoverURL    string
+	Title       string `json:"title" binding:"required"`
+	Description string `json:"description"`
+	PlayURL     string `json:"play_url" binding:"required"`
+	CoverURL    string `json:"cover_url" binding:"required"`
 }
 
 type DeleteVideoRequest struct {

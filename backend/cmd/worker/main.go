@@ -111,6 +111,9 @@ func main() {
 	} else {
 		log.Printf("Config loaded from file: %s", configPath)
 	}
+	if !cfg.RabbitMQ.Enabled {
+		log.Fatal("Worker requires RABBITMQ_ENABLED=true")
+	}
 	// 连接数据库（带重试）
 	var sqlDB *gorm.DB
 	connectWithRetry("MySQL", 10, func() error {
@@ -127,20 +130,23 @@ func main() {
 	defer db.CloseDB(sqlDB)
 
 	// 连接 Redis（用于流行度更新）
-	cache, err := rediscache.NewFromEnv(&cfg.Redis)
-	if err != nil {
-		log.Printf("Redis config error (popularity worker disabled): %v", err)
-		cache = nil
-	} else {
-		pingCtx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-		defer cancel()
-		if err := cache.Ping(pingCtx); err != nil {
-			log.Printf("Redis not available (popularity worker disabled): %v", err)
-			_ = cache.Close()
+	var cache *rediscache.Client
+	if cfg.Redis.Enabled {
+		cache, err = rediscache.NewFromEnv(&cfg.Redis)
+		if err != nil {
+			log.Printf("Redis config error (popularity worker disabled): %v", err)
 			cache = nil
 		} else {
-			defer cache.Close()
-			log.Printf("Redis connected (popularity worker enabled)")
+			pingCtx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+			defer cancel()
+			if err := cache.Ping(pingCtx); err != nil {
+				log.Printf("Redis not available (popularity worker disabled): %v", err)
+				_ = cache.Close()
+				cache = nil
+			} else {
+				defer cache.Close()
+				log.Printf("Redis connected (popularity worker enabled)")
+			}
 		}
 	}
 	// 连接 RabbitMQ（带重试）

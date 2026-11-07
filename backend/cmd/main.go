@@ -2,103 +2,101 @@ package main
 
 import (
 	"context"
+	"errors"
 	"feedvid/internal/config"
 	"feedvid/internal/db"
 	apphttp "feedvid/internal/http"
-	rabbitmq "feedvid/internal/midware/rabbitmq"
+	"feedvid/internal/midware/rabbitmq"
 	rediscache "feedvid/internal/midware/redis"
 	"feedvid/internal/observability"
-	"log"
-	"os"
-	"strconv"
-	"time"
-
 	"github.com/joho/godotenv"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"strconv"
+	"syscall"
+	"time"
 )
 
 func main() {
-	// 加载 .env（本地开发）
-	if err := godotenv.Load(); err != nil {
-		log.Println(".env not found; continuing")
+	if err := run(); err != nil {
+		log.Fatal(err)
 	}
-
-	// 加载配置
-	configPath := os.Getenv("CONFIG_PATH")
-	if configPath == "" {
-		configPath = "configs/config.yaml"
+}
+func run() error {
+	if err := godotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
 	}
-	log.Printf("Loading config from %s", configPath)
-	cfg, usedDefault, err := config.LoadLocalDev(configPath)
+	path := os.Getenv("CONFIG_PATH")
+	if path == "" {
+		path = "configs/config.yaml"
+	}
+	cfg, usedDefault, err := config.LoadLocalDev(path)
 	if err != nil {
-		log.Fatalf("Failed to load config: %v", err)
+		return err
 	}
-	if usedDefault {
-		log.Printf("Config File %s not found, using default local config", configPath)
-	} else {
-		log.Printf("Config loaded from file: %s", configPath)
-	}
-
-	// 连接数据库
-	sqlDB, err := db.NewDB(db.Dbconfig{
-		Host:     cfg.Database.Host,
-		User:     cfg.Database.User,
-		Port:     cfg.Database.Port,
-		Password: cfg.Database.Password,
-		DbName:   cfg.Database.DbName,
-	})
+	log.Printf("config loaded (development defaults: %t)", usedDefault)
+	sqlDB, err := db.NewDB(db.Dbconfig{Host: cfg.Database.Host, Port: cfg.Database.Port, User: cfg.Database.User, Password: cfg.Database.Password, DbName: cfg.Database.DbName})
 	if err != nil {
-		log.Fatalf("Failed to connect database: %v", err)
-	}
-	if err := db.AutoMigrate(sqlDB); err != nil {
-		log.Fatalf("Failed to auto migrate database: %v", err)
+		return err
 	}
 	defer db.CloseDB(sqlDB)
-
-	// 连接 Redis (可选，用于缓存)
-	cache, err := rediscache.NewFromEnv(&cfg.Redis)
-	if err != nil {
-		log.Printf("Redis config error (cache disabled): %v", err)
-		cache = nil
-	} else {
-		pingCtx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
-		defer cancel()
-		if err := cache.Ping(pingCtx); err != nil {
-			log.Printf("Redis not available (cache disabled): %v", err)
-			_ = cache.Close()
+	if err := db.AutoMigrate(sqlDB); err != nil {
+		return err
+	}
+	var cache *rediscache.Client
+	if cfg.Redis.Enabled {
+		cache, err = rediscache.NewFromEnv(&cfg.Redis)
+		if err == nil {
+			ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+			err = cache.Ping(ctx)
+			cancel()
+		}
+		if err != nil {
+			log.Printf("Redis unavailable; optional cache and chunk upload disabled: %v", err)
+			if cache != nil {
+				_ = cache.Close()
+			}
 			cache = nil
-		} else {
-			defer cache.Close()
-			log.Printf("Redis connected (cache enabled)")
 		}
 	}
-
-	// 连接 RabbitMQ (可选，用于消息队列)
-	rmq, err := rabbitmq.NewRabbitMQ(&cfg.RabbitMQ)
+	if cache != nil {
+		defer cache.Close()
+	}
+	var mq *rabbitmq.RabbitMQ
+	if cfg.RabbitMQ.Enabled {
+		mq, err = rabbitmq.NewRabbitMQ(&cfg.RabbitMQ)
+		if err != nil {
+			log.Printf("RabbitMQ unavailable; optional asynchronous features disabled: %v", err)
+			mq = nil
+		}
+	}
+	if mq != nil {
+		defer mq.Close()
+	}
+	profiler, err := observability.NewPprofServer("API", cfg.Observability.Pprof.Enabled, cfg.Observability.Pprof.ApiAddr)
 	if err != nil {
-		log.Printf("RabbitMQ config error (disabled): %v", err)
-		rmq = nil
-	} else {
-		defer rmq.Close()
-		log.Printf("RabbitMQ connected")
+		return err
 	}
-
-	// Pprof
-	pprofServer, err := observability.NewPprofServer(
-		"API",
-		cfg.Observability.Pprof.Enabled,
-		cfg.Observability.Pprof.ApiAddr,
-	)
-	if err != nil {
-		log.Printf("Failed to start API pprof server: %v", err)
+	if profiler != nil {
+		defer profiler.Close()
 	}
-	if pprofServer != nil {
-		defer pprofServer.Close()
-	}
-
-	// 设置路由
-	r := apphttp.SetRouter(sqlDB, cache, rmq)
-	log.Printf("Server is running on port %d", cfg.Server.Port)
-	if err := r.Run(":" + strconv.Itoa(cfg.Server.Port)); err != nil {
-		log.Fatalf("Failed to run server: %v", err)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	server := &http.Server{Addr: ":" + strconv.Itoa(cfg.Server.Port), Handler: apphttp.SetRouter(sqlDB, cache, mq), ReadHeaderTimeout: 5 * time.Second}
+	result := make(chan error, 1)
+	go func() { result <- server.ListenAndServe() }()
+	log.Printf("API listening on %s", server.Addr)
+	select {
+	case err := <-result:
+		if !errors.Is(err, http.ErrServerClosed) {
+			return err
+		}
+		return nil
+	case <-ctx.Done():
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		return server.Shutdown(shutdownCtx)
 	}
 }

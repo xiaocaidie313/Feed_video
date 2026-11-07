@@ -6,7 +6,9 @@ import (
 	"feedvid/internal/social"
 	"feedvid/internal/video"
 	"feedvid/internal/worker"
-	"fmt"
+	mysqldriver "github.com/go-sql-driver/mysql"
+	"net"
+	"time"
 
 	"gorm.io/driver/mysql"
 	"gorm.io/gorm"
@@ -22,7 +24,7 @@ type Dbconfig struct {
 
 func NewDB(config Dbconfig) (*gorm.DB, error) {
 	//构造dsn  mysql 形式
-	dsn := fmt.Sprintf("%s:%s@tcp(%s:%s)/%s?charset=utf8mb4&Time=True&loc=Local", config.User, config.Password, config.Host, config.Port, config.DbName)
+	dsn := buildDSN(config)
 
 	// 连接数据库
 	db, err := gorm.Open(mysql.Open(dsn), &gorm.Config{})
@@ -48,4 +50,14 @@ func AutoMigrate(db *gorm.DB) error {
 		&social.Social{}, &video.OutboxMsg{}, &video.Tag{}, &video.VideoTag{},
 		&message.Message{}, &worker.Notification{},
 	)
+}
+
+func buildDSN(config Dbconfig) string {
+	cfg := mysqldriver.NewConfig()
+	cfg.User, cfg.Passwd, cfg.DBName = config.User, config.Password, config.DbName
+	cfg.Net, cfg.Addr = "tcp", net.JoinHostPort(config.Host, config.Port)
+	cfg.ParseTime, cfg.Loc = true, time.UTC
+	cfg.Timeout, cfg.ReadTimeout, cfg.WriteTimeout = 3*time.Second, 5*time.Second, 5*time.Second
+	cfg.Params = map[string]string{"charset": "utf8mb4"}
+	return cfg.FormatDSN()
 }

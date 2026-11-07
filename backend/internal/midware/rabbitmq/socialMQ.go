@@ -8,10 +8,10 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-
 type SocialMQ struct {
 	ch *amqp.Channel
 }
+
 const (
 	socialExchange   = "social.events"
 	socialQueue      = "social.events"
